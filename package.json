@@ -2,7 +2,7 @@
   "name": "vane",
   "version": "2.0.0",
   "license": "MIT",
-  "author": "ItzCrazyKns",
+  "author": "ItzCrazyKns, goshitsarch-eng",
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",

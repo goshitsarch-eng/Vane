@@ -1,6 +1,6 @@
 import BaseEmbedding from '@/lib/models/base/embedding';
 import BaseLLM from '@/lib/models/base/llm';
-import { searchSearxng, SearxngSearchOptions } from '@/lib/searxng';
+import { search } from '@/lib/search';
 import SessionManager from '@/lib/session';
 import { Chunk, ResearchBlock, SearchResultsResearchBlock } from '@/lib/types';
 import { SearchAgentConfig } from '../../../types';
@@ -12,7 +12,6 @@ import { splitText } from '@/lib/utils/splitText';
 export const executeSearch = async (input: {
   queries: string[];
   mode: SearchAgentConfig['mode'];
-  searchConfig?: SearxngSearchOptions;
   researchBlock: ResearchBlock;
   session: InstanceType<typeof SessionManager>;
   llm: BaseLLM<any>;
@@ -40,10 +39,8 @@ export const executeSearch = async (input: {
 
     const results: Chunk[] = [];
 
-    const search = async (q: string) => {
-      const res = await searchSearxng(q, {
-        ...(input.searchConfig ? input.searchConfig : {}),
-      });
+    const doSearch = async (q: string) => {
+      const res = await search(q);
 
       let resultChunks: Chunk[] = [];
 
@@ -125,7 +122,7 @@ export const executeSearch = async (input: {
       }
     };
 
-    await Promise.all(input.queries.map(search));
+    await Promise.all(input.queries.map(doSearch));
 
     results.sort((a, b) => b.metadata.similarity - a.metadata.similarity);
 
@@ -175,10 +172,8 @@ export const executeSearch = async (input: {
 
     const searchResults: Chunk[] = [];
 
-    const search = async (q: string) => {
-      const res = await searchSearxng(q, {
-        ...(input.searchConfig ? input.searchConfig : {}),
-      });
+    const doSearch = async (q: string) => {
+      const res = await search(q);
 
       let resultChunks: Chunk[] = [];
 
@@ -235,7 +230,7 @@ export const executeSearch = async (input: {
       }
     };
 
-    await Promise.all(input.queries.map(search));
+    await Promise.all(input.queries.map(doSearch));
 
     const pickerPrompt = `
       Assistant is an AI search result picker. Assistant's task is to pick 2-3 of the most relevant search results based off the query which can be then scraped for information to answer the query.

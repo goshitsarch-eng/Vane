@@ -8,6 +8,9 @@ import GroqProvider from './groq';
 import LemonadeProvider from './lemonade';
 import AnthropicProvider from './anthropic';
 import LMStudioProvider from './lmstudio';
+import OpenRouterProvider from './openrouter';
+import GenericProvider from './generic';
+import LiteLLMProvider from './litellm';
 
 export const providers: Record<string, ProviderConstructor<any>> = {
   openai: OpenAIProvider,
@@ -18,6 +21,9 @@ export const providers: Record<string, ProviderConstructor<any>> = {
   lemonade: LemonadeProvider,
   anthropic: AnthropicProvider,
   lmstudio: LMStudioProvider,
+  openrouter: OpenRouterProvider,
+  generic: GenericProvider,
+  litellm: LiteLLMProvider,
 };
 
 export const getModelProvidersUIConfigSection =

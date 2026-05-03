@@ -14,9 +14,21 @@ Vane is a **privacy-focused AI answering engine** that runs entirely on your own
 
 Want to know more about its architecture and how it works? You can read it [here](https://github.com/ItzCrazyKns/Vane/tree/master/docs/architecture/README.md).
 
+> **🍴 Fork Notice**
+>
+> This is a community fork of the original Vane project. It includes additional AI providers and alternative search backends not present in the upstream repository.
+>
+> **AI-assisted development disclaimer:** Portions of this fork were generated or modified with AI assistance to accelerate development. Review and test thoroughly before production use.
+>
+> **Changes in this fork:**
+> - **Additional AI providers:** OpenRouter, Generic OpenAI-compatible (any OpenAI API endpoint), and LiteLLM proxy support
+> - **Alternative search backends:** Choose between SearxNG (default), Brave Search API, Exa API, or Tavily API via Settings > Search
+>
+> These additions expand compatibility without removing any upstream functionality. SearxNG remains the default for both search and image/video discovery.
+
 ## ✨ Features
 
-🤖 **Support for all major AI providers** - Use local LLMs through Ollama or connect to OpenAI, Anthropic Claude, Google Gemini, Groq, and more. Mix and match models based on your needs.
+🤖 **Support for all major AI providers** - Use local LLMs through Ollama or connect to OpenAI, Anthropic Claude, Google Gemini, Groq, OpenRouter, LiteLLM, and any OpenAI-compatible API. Mix and match models based on your needs.
 
 ⚡ **Smart search modes** - Choose Speed Mode when you need quick answers, Balanced Mode for everyday searches, or Quality Mode for deep research.
 
@@ -24,7 +36,7 @@ Want to know more about its architecture and how it works? You can read it [here
 
 🧩 **Widgets** - Helpful UI cards that show up when relevant, like weather, calculations, stock prices, and other quick lookups.
 
-🔍 **Web search powered by SearxNG** - Access multiple search engines while keeping your identity private. Support for Tavily and Exa coming soon for even better results.
+🔍 **Web search powered by SearxNG** - Access multiple search engines while keeping your identity private. Or switch to Brave Search, Exa, or Tavily via Settings for different result quality and coverage.
 
 📷 **Image and video search** - Find visual content alongside text results. Search isn't limited to just articles anymore.
 

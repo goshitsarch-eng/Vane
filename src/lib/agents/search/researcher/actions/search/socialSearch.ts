@@ -47,9 +47,6 @@ const socialSearchAction: ResearchAction<typeof schema> = {
       queries: input.queries,
       researchBlock: researchBlock,
       session: additionalConfig.session,
-      searchConfig: {
-        engines: ['reddit'],
-      },
     });
 
     return {

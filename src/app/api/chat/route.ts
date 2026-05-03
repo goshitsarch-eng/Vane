@@ -210,26 +210,41 @@ export const POST = async (req: Request) => {
       }
     });
 
-    agent.searchAsync(session, {
-      chatHistory: history,
-      followUp: message.content,
-      chatId: body.message.chatId,
-      messageId: body.message.messageId,
-      config: {
-        llm,
-        embedding: embedding,
-        sources: body.sources as SearchSources[],
-        mode: body.optimizationMode,
-        fileIds: body.files,
-        systemInstructions: body.systemInstructions || 'None',
-      },
-    });
+    agent
+      .searchAsync(session, {
+        chatHistory: history,
+        followUp: message.content,
+        chatId: body.message.chatId,
+        messageId: body.message.messageId,
+        config: {
+          llm,
+          embedding: embedding,
+          sources: body.sources as SearchSources[],
+          mode: body.optimizationMode,
+          fileIds: body.files,
+          systemInstructions: body.systemInstructions || 'None',
+        },
+      })
+      .catch((err) => {
+        console.error('Unhandled error in searchAsync:', err);
+        try {
+          session.emit('error', {
+            data:
+              err instanceof Error
+                ? err.message
+                : 'An unexpected error occurred',
+          });
+          session.emit('end', {});
+        } catch {
+          // Session may already be cleaned up
+        }
+      });
 
     ensureChatExists({
       id: body.message.chatId,
       sources: body.sources as SearchSources[],
       fileIds: body.files,
-      query: body.message.content,
+      query: message.content,
     });
 
     req.signal.addEventListener('abort', () => {

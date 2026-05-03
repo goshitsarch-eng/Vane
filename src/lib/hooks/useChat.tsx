@@ -281,6 +281,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
   const [researchEnded, setResearchEnded] = useState(false);
 
+  const loadingRef = useRef(false);
   const chatHistory = useRef<[string, string][]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -454,6 +455,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
             }
           }
         } finally {
+          if (loadingRef.current) {
+            setLoading(false);
+            setResearchEnded(true);
+          }
           isReconnectingRef.current = false;
         }
       }
@@ -511,6 +516,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
 
   useEffect(() => {
     if (isMessagesLoaded && isConfigReady && newChatCreated) {
@@ -776,6 +785,24 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
       }),
     });
 
+    if (!res.ok) {
+      let errorMessage = `Request failed with status ${res.status}`;
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch {}
+      toast.error(errorMessage);
+      setLoading(false);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId
+            ? { ...msg, status: 'error' as const }
+            : msg,
+        ),
+      );
+      return;
+    }
+
     if (!res.body) throw new Error('No response body');
 
     const reader = res.body?.getReader();
@@ -785,22 +812,29 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     const messageHandler = getMessageHandler(newMessage);
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      partialChunk += decoder.decode(value, { stream: true });
+        partialChunk += decoder.decode(value, { stream: true });
 
-      try {
-        const messages = partialChunk.split('\n');
-        for (const msg of messages) {
-          if (!msg.trim()) continue;
-          const json = JSON.parse(msg);
-          messageHandler(json);
+        try {
+          const messages = partialChunk.split('\n');
+          for (const msg of messages) {
+            if (!msg.trim()) continue;
+            const json = JSON.parse(msg);
+            messageHandler(json);
+          }
+          partialChunk = '';
+        } catch (error) {
+          console.warn('Incomplete JSON, waiting for next chunk...');
         }
-        partialChunk = '';
-      } catch (error) {
-        console.warn('Incomplete JSON, waiting for next chunk...');
+      }
+    } finally {
+      if (loadingRef.current) {
+        setLoading(false);
+        setResearchEnded(true);
       }
     }
   };

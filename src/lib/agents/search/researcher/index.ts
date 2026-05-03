@@ -6,6 +6,11 @@ import { Message, ReasoningResearchBlock } from '@/lib/types';
 import formatChatHistoryAsString from '@/lib/utils/formatHistory';
 import { ToolCall } from '@/lib/models/types';
 
+const isToolUnsupportedError = (err: unknown): boolean => {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /tool|web_search|No endpoints found|404/i.test(msg);
+};
+
 class Researcher {
   async research(
     session: SessionManager,
@@ -56,6 +61,8 @@ class Researcher {
       },
     ];
 
+    let toolError: Error | undefined;
+
     for (let i = 0; i < maxIteration; i++) {
       const researcherPrompt = getResearcherPrompt(
         availableActionsDescription,
@@ -83,47 +90,25 @@ class Researcher {
 
       let finalToolCalls: ToolCall[] = [];
 
-      for await (const partialRes of actionStream) {
-        if (partialRes.toolCallChunk.length > 0) {
-          partialRes.toolCallChunk.forEach((tc) => {
-            if (
-              tc.name === '__reasoning_preamble' &&
-              tc.arguments['plan'] &&
-              !reasoningEmitted &&
-              block &&
-              block.type === 'research'
-            ) {
-              reasoningEmitted = true;
+      try {
+        for await (const partialRes of actionStream) {
+          if (partialRes.toolCallChunk.length > 0) {
+            partialRes.toolCallChunk.forEach((tc) => {
+              if (
+                tc.name === '__reasoning_preamble' &&
+                tc.arguments['plan'] &&
+                !reasoningEmitted &&
+                block &&
+                block.type === 'research'
+              ) {
+                reasoningEmitted = true;
 
-              block.data.subSteps.push({
-                id: reasoningId,
-                type: 'reasoning',
-                reasoning: tc.arguments['plan'],
-              });
+                block.data.subSteps.push({
+                  id: reasoningId,
+                  type: 'reasoning',
+                  reasoning: tc.arguments['plan'],
+                });
 
-              session.updateBlock(researchBlockId, [
-                {
-                  op: 'replace',
-                  path: '/data/subSteps',
-                  value: block.data.subSteps,
-                },
-              ]);
-            } else if (
-              tc.name === '__reasoning_preamble' &&
-              tc.arguments['plan'] &&
-              reasoningEmitted &&
-              block &&
-              block.type === 'research'
-            ) {
-              const subStepIndex = block.data.subSteps.findIndex(
-                (step: any) => step.id === reasoningId,
-              );
-
-              if (subStepIndex !== -1) {
-                const subStep = block.data.subSteps[
-                  subStepIndex
-                ] as ReasoningResearchBlock;
-                subStep.reasoning = tc.arguments['plan'];
                 session.updateBlock(researchBlockId, [
                   {
                     op: 'replace',
@@ -131,20 +116,54 @@ class Researcher {
                     value: block.data.subSteps,
                   },
                 ]);
+              } else if (
+                tc.name === '__reasoning_preamble' &&
+                tc.arguments['plan'] &&
+                reasoningEmitted &&
+                block &&
+                block.type === 'research'
+              ) {
+                const subStepIndex = block.data.subSteps.findIndex(
+                  (step: any) => step.id === reasoningId,
+                );
+
+                if (subStepIndex !== -1) {
+                  const subStep = block.data.subSteps[
+                    subStepIndex
+                  ] as ReasoningResearchBlock;
+                  subStep.reasoning = tc.arguments['plan'];
+                  session.updateBlock(researchBlockId, [
+                    {
+                      op: 'replace',
+                      path: '/data/subSteps',
+                      value: block.data.subSteps,
+                    },
+                  ]);
+                }
               }
-            }
 
-            const existingIndex = finalToolCalls.findIndex(
-              (ftc) => ftc.id === tc.id,
-            );
+              const existingIndex = finalToolCalls.findIndex(
+                (ftc) => ftc.id === tc.id,
+              );
 
-            if (existingIndex !== -1) {
-              finalToolCalls[existingIndex].arguments = tc.arguments;
-            } else {
-              finalToolCalls.push(tc);
-            }
-          });
+              if (existingIndex !== -1) {
+                finalToolCalls[existingIndex].arguments = tc.arguments;
+              } else {
+                finalToolCalls.push(tc);
+              }
+            });
+          }
         }
+      } catch (err) {
+        if (!isToolUnsupportedError(err)) {
+          throw err;
+        }
+        toolError = err instanceof Error ? err : new Error(String(err));
+        console.warn(
+          'Model does not support tool use, falling back to direct search.',
+          toolError.message,
+        );
+        break;
       }
 
       if (finalToolCalls.length === 0) {
@@ -180,6 +199,28 @@ class Researcher {
           content: JSON.stringify(action),
         });
       });
+    }
+
+    // Fallback: if tool use was unsupported, run a single web_search directly
+    if (toolError && input.config.sources.includes('web')) {
+      try {
+        const fallbackResult = await ActionRegistry.execute(
+          'web_search',
+          { type: 'web_search', queries: [input.followUp] },
+          {
+            llm: input.config.llm,
+            embedding: input.config.embedding,
+            session: session,
+            researchBlockId: researchBlockId,
+            fileIds: input.config.fileIds,
+            mode: input.config.mode,
+          },
+        );
+
+        actionOutput.push(fallbackResult);
+      } catch (err) {
+        console.error('Fallback direct search failed:', err);
+      }
     }
 
     const searchResults = actionOutput

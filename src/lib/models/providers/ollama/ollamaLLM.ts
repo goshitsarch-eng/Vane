@@ -251,7 +251,9 @@ class OllamaLLM extends BaseLLM<OllamaConfig> {
       recievedObj += chunk.message.content;
 
       try {
-        yield parse(recievedObj) as T;
+        if (recievedObj.trim()) {
+          yield parse(recievedObj) as T;
+        }
       } catch (err) {
         console.log('Error parsing partial object from Ollama:', err);
         yield {} as T;

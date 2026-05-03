@@ -175,13 +175,16 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
                   arguments: tc.function?.arguments || '',
                 };
                 recievedToolCalls.push(call);
-                return { ...call, arguments: parse(call.arguments || '{}') };
+                return {
+                  ...call,
+                  arguments: parse(call.arguments.trim() || '{}'),
+                };
               } else {
                 const existingCall = recievedToolCalls[tc.index];
                 existingCall.arguments += tc.function?.arguments || '';
                 return {
                   ...existingCall,
-                  arguments: parse(existingCall.arguments),
+                  arguments: parse(existingCall.arguments.trim() || '{}'),
                 };
               }
             }) || [],
@@ -256,14 +259,18 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
         recievedObj += chunk.delta;
 
         try {
-          yield parse(recievedObj) as T;
+          if (recievedObj.trim()) {
+            yield parse(recievedObj) as T;
+          }
         } catch (err) {
           console.log('Error parsing partial object from OpenAI:', err);
           yield {} as T;
         }
       } else if (chunk.type === 'response.output_text.done' && chunk.text) {
         try {
-          yield parse(chunk.text) as T;
+          if (chunk.text.trim()) {
+            yield parse(chunk.text) as T;
+          }
         } catch (err) {
           throw new Error(`Error parsing response from OpenAI: ${err}`);
         }

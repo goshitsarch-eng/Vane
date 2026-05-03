@@ -126,7 +126,9 @@ class OpenRouterLLM extends OpenAILLM {
         receivedObj += delta;
 
         try {
-          yield parse(receivedObj) as T;
+          if (receivedObj.trim()) {
+            yield parse(receivedObj) as T;
+          }
         } catch {
           yield {} as T;
         }
@@ -134,7 +136,9 @@ class OpenRouterLLM extends OpenAILLM {
     }
 
     try {
-      yield parse(receivedObj) as T;
+      if (receivedObj.trim()) {
+        yield parse(receivedObj) as T;
+      }
     } catch (err) {
       throw new Error(`Error parsing streamed response from OpenRouter: ${err}`);
     }

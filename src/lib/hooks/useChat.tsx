@@ -118,7 +118,7 @@ const checkConfig = async (
 
     if (!chatModelProvider) {
       throw new Error(
-        'No chat models found, pleae configure them in the settings page.',
+        'No chat models found, please configure them in the settings page.',
       );
     }
 
@@ -131,12 +131,16 @@ const checkConfig = async (
 
     const embeddingModelProvider =
       providers.find((p) => p.id === embeddingModelProviderId) ??
-      providers.find((p) => p.embeddingModels.length > 0);
+      providers.find((p) => p.embeddingModels.length > 0) ??
+      providers.find((p) => p.type === 'transformers');
 
     if (!embeddingModelProvider) {
-      throw new Error(
-        'No embedding models found, pleae configure them in the settings page.',
+      toast.warning(
+        'No embedding models found. Search ranking and file uploads will be unavailable. Add an embedding provider in Settings.',
       );
+      setEmbeddingModelProvider({ key: '', providerId: '' });
+      setIsConfigReady(true);
+      return;
     }
 
     embeddingModelProviderId = embeddingModelProvider.id;
@@ -145,6 +149,16 @@ const checkConfig = async (
       embeddingModelProvider.embeddingModels.find(
         (m) => m.key === embeddingModelKey,
       ) ?? embeddingModelProvider.embeddingModels[0];
+
+    if (!embeddingModel) {
+      toast.warning(
+        'No embedding models found. Search ranking and file uploads will be unavailable. Add an embedding provider in Settings.',
+      );
+      setEmbeddingModelProvider({ key: '', providerId: '' });
+      setIsConfigReady(true);
+      return;
+    }
+
     embeddingModelKey = embeddingModel.key;
 
     localStorage.setItem('chatModelKey', chatModelKey);
@@ -777,10 +791,12 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           key: chatModelProvider.key,
           providerId: chatModelProvider.providerId,
         },
-        embeddingModel: {
-          key: embeddingModelProvider.key,
-          providerId: embeddingModelProvider.providerId,
-        },
+        embeddingModel: embeddingModelProvider.key
+          ? {
+              key: embeddingModelProvider.key,
+              providerId: embeddingModelProvider.providerId,
+            }
+          : null,
         systemInstructions: localStorage.getItem('systemInstructions'),
       }),
     });

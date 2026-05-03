@@ -3,6 +3,13 @@ set -e
 
 echo "Starting SearXNG..."
 
+SEARCH_BACKEND="${SEARCH_BACKEND:-searxng}"
+
+if [ "$SEARCH_BACKEND" != "searxng" ]; then
+  echo "Direct search backend '$SEARCH_BACKEND' is configured — disabling '$SEARCH_BACKEND' engine in SearXNG to avoid double API calls."
+  printf '\n  - name: %s\n    disabled: true\n' "$SEARCH_BACKEND" >> /etc/searxng/settings.yml
+fi
+
 sudo -H -u searxng bash -c "cd /usr/local/searxng/searxng-src && export SEARXNG_SETTINGS_PATH='/etc/searxng/settings.yml' && export FLASK_APP=searx/webapp.py && /usr/local/searxng/searx-pyenv/bin/python -m flask run --host=0.0.0.0 --port=8080" &
 SEARXNG_PID=$!
 

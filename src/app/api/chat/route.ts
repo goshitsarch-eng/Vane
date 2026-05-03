@@ -20,15 +20,23 @@ const messageSchema = z.object({
 });
 
 const chatModelSchema: z.ZodType<ModelWithProvider> = z.object({
-  providerId: z.string({ message: 'Chat model provider id must be provided' }),
-  key: z.string({ message: 'Chat model key must be provided' }),
+  providerId: z
+    .string({ message: 'Chat model provider id must be provided' })
+    .min(1, 'Chat model provider id must be provided'),
+  key: z
+    .string({ message: 'Chat model key must be provided' })
+    .min(1, 'Chat model key must be provided'),
 });
 
 const embeddingModelSchema: z.ZodType<ModelWithProvider> = z.object({
-  providerId: z.string({
-    message: 'Embedding model provider id must be provided',
-  }),
-  key: z.string({ message: 'Embedding model key must be provided' }),
+  providerId: z
+    .string({
+      message: 'Embedding model provider id must be provided',
+    })
+    .min(1, 'Embedding model provider id must be provided'),
+  key: z
+    .string({ message: 'Embedding model key must be provided' })
+    .min(1, 'Embedding model key must be provided'),
 });
 
 const bodySchema = z.object({
@@ -43,7 +51,7 @@ const bodySchema = z.object({
     .default([]),
   files: z.array(z.string()).optional().default([]),
   chatModel: chatModelSchema,
-  embeddingModel: embeddingModelSchema,
+  embeddingModel: embeddingModelSchema.optional().nullable(),
   systemInstructions: z.string().nullable().optional().default(''),
 });
 
@@ -127,13 +135,32 @@ export const POST = async (req: Request) => {
 
     const registry = new ModelRegistry();
 
-    const [llm, embedding] = await Promise.all([
-      registry.loadChatModel(body.chatModel.providerId, body.chatModel.key),
-      registry.loadEmbeddingModel(
-        body.embeddingModel.providerId,
-        body.embeddingModel.key,
-      ),
-    ]);
+    let llm, embedding = null;
+    try {
+      llm = await registry.loadChatModel(
+        body.chatModel.providerId,
+        body.chatModel.key,
+      );
+    } catch (err: any) {
+      return Response.json(
+        {
+          message:
+            'No AI model is configured. Please add a model provider in Settings.',
+        },
+        { status: 400 },
+      );
+    }
+
+    if (body.embeddingModel) {
+      try {
+        embedding = await registry.loadEmbeddingModel(
+          body.embeddingModel.providerId,
+          body.embeddingModel.key,
+        );
+      } catch (err: any) {
+        embedding = null;
+      }
+    }
 
     const history: ChatTurnMessage[] = body.history.map((msg) => {
       if (msg[0] === 'human') {

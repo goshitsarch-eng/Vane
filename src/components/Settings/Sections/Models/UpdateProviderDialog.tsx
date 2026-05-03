@@ -24,9 +24,7 @@ const UpdateProvider = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const config: Record<string, any> = {
-      name: modelProvider.name,
-    };
+    const config: Record<string, any> = {};
 
     fields.forEach((field) => {
       config[field.key] =

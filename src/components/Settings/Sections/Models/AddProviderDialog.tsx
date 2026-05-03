@@ -5,7 +5,7 @@ import {
   DialogTitle,
 } from '@headlessui/react';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ConfigModelProvider,
@@ -46,16 +46,17 @@ const AddProvider = ({
 
   const selectedProviderFields = useMemo(() => {
     if (!selectedProvider) return [];
-    const providerFields = providerConfigMap[selectedProvider]?.fields || [];
-    const config: Record<string, any> = {};
+    return providerConfigMap[selectedProvider]?.fields || [];
+  }, [selectedProvider, providerConfigMap]);
 
-    providerFields.forEach((field) => {
-      config[field.key] = field.default || '';
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const fields = providerConfigMap[selectedProvider]?.fields || [];
+    const newConfig: Record<string, any> = {};
+    fields.forEach((field) => {
+      newConfig[field.key] = field.default || '';
     });
-
-    setConfig(config);
-
-    return providerFields;
+    setConfig(newConfig);
   }, [selectedProvider, providerConfigMap]);
 
   const handleSubmit = async (e: React.FormEvent) => {

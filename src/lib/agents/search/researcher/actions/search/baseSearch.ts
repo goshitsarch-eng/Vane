@@ -15,7 +15,7 @@ export const executeSearch = async (input: {
   researchBlock: ResearchBlock;
   session: InstanceType<typeof SessionManager>;
   llm: BaseLLM<any>;
-  embedding: BaseEmbedding<any>;
+  embedding: BaseEmbedding<any> | null;
 }) => {
   const researchBlock = input.researchBlock;
 
@@ -45,14 +45,17 @@ export const executeSearch = async (input: {
       let resultChunks: Chunk[] = [];
 
       try {
-        const queryEmbedding = (await input.embedding.embedText([q]))[0];
+        if (!input.embedding) throw new Error('No embedding model');
+        const embedding = input.embedding;
+
+        const queryEmbedding = (await embedding.embedText([q]))[0];
 
         resultChunks = (
           await Promise.all(
             res.results.map(async (r) => {
               const content = r.content || r.title;
               const chunkEmbedding = (
-                await input.embedding.embedText([content])
+                await embedding.embedText([content])
               )[0];
 
               return {

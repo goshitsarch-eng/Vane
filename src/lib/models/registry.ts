@@ -62,6 +62,7 @@ class ModelRegistry {
         providers.push({
           id: p.id,
           name: p.name,
+          type: p.type,
           chatModels: m.chat,
           embeddingModels: m.embedding,
         });
@@ -133,6 +134,14 @@ class ModelRegistry {
       provider: instance,
     });
 
+    if (m.chat.length > 0 || m.embedding.length > 0) {
+      configManager.updateProviderModels(
+        newProvider.id,
+        m.chat || [],
+        m.embedding || [],
+      );
+    }
+
     return {
       ...newProvider,
       chatModels: m.chat || [],
@@ -186,10 +195,21 @@ class ModelRegistry {
       };
     }
 
+    this.activeProviders = this.activeProviders.filter(
+      (p) => p.id !== providerId,
+    );
     this.activeProviders.push({
       ...updated,
       provider: instance,
     });
+
+    if (m.chat.length > 0 || m.embedding.length > 0) {
+      configManager.updateProviderModels(
+        updated.id,
+        m.chat || [],
+        m.embedding || [],
+      );
+    }
 
     return {
       ...updated,

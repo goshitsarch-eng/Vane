@@ -38,6 +38,11 @@ const SearchImages = ({
             );
             const chatModel = localStorage.getItem('chatModelKey');
 
+            if (!chatModel || !chatModelProvider) {
+              setLoading(false);
+              return;
+            }
+
             const res = await fetch(`/api/images`, {
               method: 'POST',
               headers: {

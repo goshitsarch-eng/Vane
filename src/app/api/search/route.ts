@@ -9,7 +9,7 @@ interface ChatRequestBody {
   optimizationMode: 'speed' | 'balanced' | 'quality';
   sources: SearchSources[];
   chatModel: ModelWithProvider;
-  embeddingModel: ModelWithProvider;
+  embeddingModel?: ModelWithProvider | null;
   query: string;
   history: Array<[string, string]>;
   stream?: boolean;
@@ -33,13 +33,22 @@ export const POST = async (req: Request) => {
 
     const registry = new ModelRegistry();
 
-    const [llm, embeddings] = await Promise.all([
-      registry.loadChatModel(body.chatModel.providerId, body.chatModel.key),
-      registry.loadEmbeddingModel(
-        body.embeddingModel.providerId,
-        body.embeddingModel.key,
-      ),
-    ]);
+    const llm = await registry.loadChatModel(
+      body.chatModel.providerId,
+      body.chatModel.key,
+    );
+
+    let embeddings = null;
+    if (body.embeddingModel) {
+      try {
+        embeddings = await registry.loadEmbeddingModel(
+          body.embeddingModel.providerId,
+          body.embeddingModel.key,
+        );
+      } catch (err: any) {
+        embeddings = null;
+      }
+    }
 
     const history: ChatTurnMessage[] = body.history.map((msg) => {
       return msg[0] === 'human'

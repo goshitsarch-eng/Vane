@@ -53,6 +53,11 @@ const Searchvideos = ({
             );
             const chatModel = localStorage.getItem('chatModelKey');
 
+            if (!chatModel || !chatModelProvider) {
+              setLoading(false);
+              return;
+            }
+
             const res = await fetch(`/api/videos`, {
               method: 'POST',
               headers: {

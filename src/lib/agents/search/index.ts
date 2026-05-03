@@ -189,9 +189,14 @@ class SearchAgent {
         .execute();
     } catch (err) {
       console.error('Error in searchAsync:', err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message.includes('is empty')
+            ? 'No AI model configured. Please add a model provider in Settings.'
+            : err.message
+          : 'An unexpected error occurred';
       session.emit('error', {
-        data:
-          err instanceof Error ? err.message : 'An unexpected error occurred',
+        data: errorMessage,
       });
       session.emit('end', {});
 

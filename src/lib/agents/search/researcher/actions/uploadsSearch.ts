@@ -29,6 +29,13 @@ const uploadsSearchAction: ResearchAction<typeof schema> = {
   execute: async (input, additionalConfig) => {
     input.queries = input.queries.slice(0, 3);
 
+    if (!additionalConfig.embedding) {
+      return {
+        type: 'search_results',
+        results: [],
+      };
+    }
+
     const researchBlock = additionalConfig.session.getBlock(
       additionalConfig.researchBlockId,
     );

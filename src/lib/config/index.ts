@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'fs';
 import { Config, ConfigModelProvider, UIConfigSections } from './types';
+import { Model } from '../models/types';
 import { hashObj } from '../utils/hash';
 import { getModelProvidersUIConfigSection } from '../models/providers';
 
@@ -258,7 +259,7 @@ class ConfigManager {
       });
 
       if (configured) {
-        const hash = hashObj(newProvider.config);
+        const hash = hashObj({ type: newProvider.type, ...newProvider.config });
         newProvider.hash = hash;
         delete newProvider.required;
 
@@ -281,6 +282,13 @@ class ConfigManager {
           process.env[f.env] ?? f.default ?? '';
       }
     });
+
+    if (
+      this.currentConfig.search.backend &&
+      !process.env.SEARCH_BACKEND
+    ) {
+      process.env.SEARCH_BACKEND = this.currentConfig.search.backend;
+    }
 
     this.saveConfig();
   }
@@ -327,13 +335,29 @@ class ConfigManager {
       config,
       chatModels: [],
       embeddingModels: [],
-      hash: hashObj(config),
+      hash: hashObj({ type, ...config }),
     };
 
     this.currentConfig.modelProviders.push(newModelProvider);
     this.saveConfig();
 
     return newModelProvider;
+  }
+
+  public updateProviderModels(
+    providerId: string,
+    chatModels: Model[],
+    embeddingModels: Model[],
+  ) {
+    const provider = this.currentConfig.modelProviders.find(
+      (p) => p.id === providerId,
+    );
+
+    if (!provider) return;
+
+    provider.chatModels = chatModels;
+    provider.embeddingModels = embeddingModels;
+    this.saveConfig();
   }
 
   public removeModelProvider(id: string) {

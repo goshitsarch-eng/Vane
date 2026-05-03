@@ -92,10 +92,6 @@ docker run -d -p 3000:3000 -v vane-data:/home/vane/data --name vane vane
 
 Add a site search with URL: `http://localhost:3000/?q=%s`
 
-## One-Click Deploy
-
-[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/vps/docker-hosting?compose_url=https://raw.githubusercontent.com/goshitsarch-eng/Vane/refs/heads/master/docker-compose.yaml)
-
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.

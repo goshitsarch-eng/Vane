@@ -1,6 +1,6 @@
 services:
   vane:
-    image: itzcrazykns1337/vane:latest
+    image: goshitsarch/vane:latest
     build:
       context: .
     ports:

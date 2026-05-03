@@ -142,12 +142,14 @@ export const POST = async (req: Request) => {
         body.chatModel.key,
       );
     } catch (err: any) {
+      const isMissingProvider = err.message === 'Invalid provider id';
       return Response.json(
         {
-          message:
-            'No AI model is configured. Please add a model provider in Settings.',
+          message: isMissingProvider
+            ? 'No AI model is configured. Please add a model provider in Settings.'
+            : err.message || 'Failed to load AI model',
         },
-        { status: 400 },
+        { status: isMissingProvider ? 400 : 500 },
       );
     }
 

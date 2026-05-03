@@ -63,6 +63,9 @@ class LiteLLMProvider extends BaseModelProvider<LiteLLMConfig> {
       });
 
       if (!res.ok) {
+        console.error(
+          `LiteLLM proxy /models returned ${res.status}: ${await res.text().catch(() => res.statusText)}`,
+        );
         return {
           embedding: [],
           chat: [],

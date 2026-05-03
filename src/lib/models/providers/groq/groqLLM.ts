@@ -1,5 +1,5 @@
-import OpenAILLM from '../openai/openaiLLM';
+import CompatibleOpenAILLM from '../common/compatibleLLM';
 
-class GroqLLM extends OpenAILLM {}
+class GroqLLM extends CompatibleOpenAILLM {}
 
 export default GroqLLM;

@@ -48,6 +48,8 @@ class OpenRouterProvider extends BaseModelProvider<OpenRouterConfig> {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.config.apiKey}`,
+          'HTTP-Referer': 'https://github.com/goshitsarch-eng/Vane',
+          'X-Title': 'Vane',
         },
       });
 

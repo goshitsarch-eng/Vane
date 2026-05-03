@@ -11,28 +11,27 @@ import {
   ChatCompletionToolMessageParam,
 } from 'openai/resources/index.mjs';
 
-type OpenRouterConfig = {
+type CompatibleOpenAIConfig = {
   apiKey: string;
   model: string;
   baseURL?: string;
   options?: any;
 };
 
-class OpenRouterLLM extends OpenAILLM {
+/**
+ * CompatibleOpenAILLM is a drop-in replacement for OpenAILLM that uses standard
+ * chat.completions with response_format: { type: 'json_object' } for structured
+ * output instead of the newer OpenAI-specific APIs (chat.completions.parse,
+ * responses.stream) that are unsupported by most third-party endpoints.
+ *
+ * Use this as the base for LiteLLM, Generic, Groq, LMStudio, and any other
+ * OpenAI-compatible provider that does not support the newest OpenAI SDK methods.
+ */
+class CompatibleOpenAILLM extends OpenAILLM {
   declare openAIClient: OpenAI;
 
-  constructor(protected config: OpenRouterConfig) {
+  constructor(protected config: CompatibleOpenAIConfig) {
     super(config);
-
-    // Re-create client with OpenRouter-specific attribution headers
-    this.openAIClient = new OpenAI({
-      apiKey: this.config.apiKey,
-      baseURL: this.config.baseURL || 'https://api.openai.com/v1',
-      defaultHeaders: {
-        'HTTP-Referer': 'https://github.com/goshitsarch-eng/Vane',
-        'X-Title': 'Vane',
-      },
-    });
   }
 
   convertToOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
@@ -98,11 +97,13 @@ class OpenRouterLLM extends OpenAILLM {
         const repaired = repairJson(raw, { extractJson: true }) as string;
         return input.schema.parse(JSON.parse(repaired)) as T;
       } catch (err) {
-        throw new Error(`Error parsing response from OpenRouter: ${err}`);
+        throw new Error(
+          `Error parsing response from LLM: ${err}`,
+        );
       }
     }
 
-    throw new Error('No response from OpenRouter');
+    throw new Error('No response from LLM');
   }
 
   async *streamObject<T>(input: GenerateObjectInput): AsyncGenerator<T> {
@@ -150,9 +151,9 @@ class OpenRouterLLM extends OpenAILLM {
         yield parse(receivedObj) as T;
       }
     } catch (err) {
-      throw new Error(`Error parsing streamed response from OpenRouter: ${err}`);
+      throw new Error(`Error parsing streamed response from LLM: ${err}`);
     }
   }
 }
 
-export default OpenRouterLLM;
+export default CompatibleOpenAILLM;

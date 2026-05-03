@@ -1,5 +1,6 @@
 import formatChatHistoryAsString from '@/lib/utils/formatHistory';
 import { searchSearxng } from '@/lib/searxng';
+import { getActiveSearchBackend } from '@/lib/search';
 import {
   videoSearchFewShots,
   videoSearchPrompt,
@@ -43,13 +44,20 @@ const searchVideos = async (
     schema: schema,
   });
 
-  const searchRes = await searchSearxng(res.query, {
-    engines: ['youtube'],
-  });
+  let searchRes;
+  try {
+    searchRes = await searchSearxng(res.query, {
+      engines: ['youtube'],
+    });
+  } catch (err) {
+    // SearXNG not available — fall back to generic text search
+    const backend = getActiveSearchBackend();
+    searchRes = await backend.search(res.query, { count: 20 });
+  }
 
   const videos: VideoSearchResult[] = [];
 
-  searchRes.results.forEach((result) => {
+  searchRes.results.forEach((result: any) => {
     if (result.thumbnail && result.url && result.title && result.iframe_src) {
       videos.push({
         img_src: result.thumbnail,

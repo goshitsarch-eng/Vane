@@ -1,6 +1,7 @@
 /* I don't think can be classified as agents but to keep the structure consistent i guess ill keep it here */
 
 import { searchSearxng } from '@/lib/searxng';
+import { getActiveSearchBackend } from '@/lib/search';
 import {
   imageSearchFewShots,
   imageSearchPrompt,
@@ -44,13 +45,20 @@ const searchImages = async (
     schema: schema,
   });
 
-  const searchRes = await searchSearxng(res.query, {
-    engines: ['bing images', 'google images'],
-  });
+  let searchRes;
+  try {
+    searchRes = await searchSearxng(res.query, {
+      engines: ['bing images', 'google images'],
+    });
+  } catch (err) {
+    // SearXNG not available — fall back to generic text search
+    const backend = getActiveSearchBackend();
+    searchRes = await backend.search(res.query, { count: 20 });
+  }
 
   const images: ImageSearchResult[] = [];
 
-  searchRes.results.forEach((result) => {
+  searchRes.results.forEach((result: any) => {
     if (result.img_src && result.url && result.title) {
       images.push({
         img_src: result.img_src,

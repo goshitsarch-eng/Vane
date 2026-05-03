@@ -111,6 +111,7 @@ class ConfigManager {
         description: 'Choose which search API to use for web search',
         default: 'searxng',
         scope: 'server',
+        env: 'SEARCH_BACKEND',
         options: [
           { name: 'SearXNG (self-hosted)', value: 'searxng' },
           { name: 'Brave Search API', value: 'brave' },
@@ -283,10 +284,10 @@ class ConfigManager {
       }
     });
 
-    if (
-      this.currentConfig.search.backend &&
-      !process.env.SEARCH_BACKEND
-    ) {
+    /* Sync SEARCH_BACKEND env var bidirectionally with config */
+    if (process.env.SEARCH_BACKEND) {
+      this.currentConfig.search.backend = process.env.SEARCH_BACKEND;
+    } else if (this.currentConfig.search.backend) {
       process.env.SEARCH_BACKEND = this.currentConfig.search.backend;
     }
 

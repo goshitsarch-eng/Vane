@@ -1,5 +1,5 @@
-import OpenAILLM from '../openai/openaiLLM';
+import CompatibleOpenAILLM from '../common/compatibleLLM';
 
-class LMStudioLLM extends OpenAILLM {}
+class LMStudioLLM extends CompatibleOpenAILLM {}
 
 export default LMStudioLLM;

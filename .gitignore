@@ -33,6 +33,11 @@ logs/
 # Miscellaneous
 .DS_Store
 Thumbs.db
+opencode.json
+plan.md
+
+# TypeScript
+tsconfig.tsbuildinfo
 
 # Db
 db.sqlite

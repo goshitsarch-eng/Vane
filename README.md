@@ -14,6 +14,17 @@ A **privacy-focused AI answering engine** that runs on your own hardware. Combin
 - **Alternative search backends:** Brave Search, Exa, Tavily (in addition to SearXNG default)
 - **Bug fixes:** Embedding-optional architecture (OpenRouter/Anthropic/Groq no longer block search), model persistence fixes, better error messages, SearXNG engine dedup, config hash collision fix
 
+## Recent Fixes (v2.0.1)
+
+- **Brave Search via env var:** `SEARCH_BACKEND=brave` now correctly activates Brave Search from environment variables ([details](#environment-variables)).
+- **LiteLLM / Generic / Groq / LM Studio structured output:** Fixed `generateObject`/`streamObject` which previously relied on OpenAI-specific beta APIs unavailable on third-party endpoints. Now uses standard `response_format: { type: 'json_object' }` compatible with any OpenAI-compatible API.
+- **Anthropic native adapter:** Replaced broken OpenAI-shim with a proper Anthropic Messages API adapter including streaming, tool calls, and structured output.
+- **Image/video search fallback:** When SearXNG is not the active backend, image/video search now gracefully falls back to the configured text search backend instead of crashing.
+- **LiteLLM/Generic model discovery:** Added error logging when `/models` endpoints return non-200.
+- **OpenRouter attribution:** Added `HTTP-Referer` and `X-Title` headers for improved rate-limiting and attribution.
+- **Docker Compose config:** Documented all supported environment variables in `docker-compose.yaml`.
+- **Entrypoint hardening:** `entrypoint.sh` now validates SearXNG engine names before writing config to avoid corruption with non-SearXNG backends (Exa, Tavily).
+
 ## Features
 
 - **Multi-provider LLM support** — Ollama, OpenAI, Anthropic, Gemini, Groq, OpenRouter, any OpenAI-compatible API
@@ -66,6 +77,12 @@ docker run -d -p 3000:3000 -e SEARXNG_API_URL=http://your-searxng:8080 -v vane-d
 | `BRAVE_API_KEY` | — | Brave Search API key |
 | `EXA_API_KEY` | — | Exa API key |
 | `TAVILY_API_KEY` | — | Tavily API key |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter base URL |
+| `LITELLM_BASE_URL` | — | LiteLLM proxy base URL |
+| `LITELLM_API_KEY` | — | LiteLLM proxy API key (optional) |
+| `GENERIC_OPENAI_BASE_URL` | — | Generic OpenAI-compatible API base URL |
+| `GENERIC_OPENAI_API_KEY` | — | Generic OpenAI-compatible API key (optional) |
 
 ## Build from Source
 

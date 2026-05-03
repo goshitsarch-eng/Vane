@@ -63,6 +63,9 @@ class GenericProvider extends BaseModelProvider<GenericConfig> {
       });
 
       if (!res.ok) {
+        console.error(
+          `Generic OpenAI-compatible API /models returned ${res.status}: ${await res.text().catch(() => res.statusText)}`,
+        );
         return {
           embedding: [],
           chat: [],

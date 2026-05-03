@@ -1,6 +1,7 @@
 import {
   SelectUIConfigField,
   StringUIConfigField,
+  PasswordUIConfigField,
   SwitchUIConfigField,
   TextareaUIConfigField,
   UIConfigField,
@@ -99,11 +100,13 @@ const SettingsInput = ({
   value,
   setValue,
   dataAdd,
+  inputType = 'text',
 }: {
-  field: StringUIConfigField;
+  field: StringUIConfigField | PasswordUIConfigField;
   value?: any;
   setValue: (value: any) => void;
   dataAdd: string;
+  inputType?: string;
 }) => {
   const [loading, setLoading] = useState(false);
 
@@ -157,7 +160,7 @@ const SettingsInput = ({
             onBlur={(event) => handleSave(event.target.value)}
             className="w-full rounded-lg border border-light-200 dark:border-dark-200 bg-light-primary dark:bg-dark-primary px-3 py-2 lg:px-4 lg:py-3 pr-10 !text-xs lg:!text-[13px] text-black/80 dark:text-white/80 placeholder:text-black/40 dark:placeholder:text-white/40 focus-visible:outline-none focus-visible:border-light-300 dark:focus-visible:border-dark-300 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             placeholder={field.placeholder}
-            type="text"
+            type={inputType}
             disabled={loading}
           />
           {loading && (
@@ -352,6 +355,16 @@ const SettingsField = ({
           dataAdd={dataAdd}
         />
       );
+    case 'password':
+      return (
+        <SettingsInput
+          field={field}
+          value={val}
+          setValue={setVal}
+          dataAdd={dataAdd}
+          inputType="password"
+        />
+      );
     case 'textarea':
       return (
         <SettingsTextarea
@@ -371,7 +384,7 @@ const SettingsField = ({
         />
       );
     default:
-      return <div>Unsupported field type: {field.type}</div>;
+      return <div>Unsupported field type</div>;
   }
 };
 

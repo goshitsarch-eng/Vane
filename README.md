@@ -92,7 +92,15 @@ There are mainly 2 ways of installing Vane - With Docker, Without Docker. Using 
 
 ### Getting Started with Docker (Recommended)
 
-Vane can be easily run using Docker. Simply run the following command:
+This fork provides pre-built Docker images with all additional providers and search backends included.
+
+**Using this fork's image:**
+
+```bash
+docker run -d -p 3000:3000 -v vane-data:/home/vane/data --name vane goshitsarch/vane:latest
+```
+
+**Or using the upstream image:**
 
 ```bash
 docker run -d -p 3000:3000 -v vane-data:/home/vane/data --name vane itzcrazykns1337/vane:latest
@@ -102,10 +110,28 @@ This will pull and start the Vane container with the bundled SearxNG search engi
 
 **Note**: The image includes both Vane and SearxNG, so no additional setup is required. The `-v` flags create persistent volumes for your data and uploaded files.
 
+#### Using Docker Compose
+
+You can also use Docker Compose for easier management:
+
+```bash
+git clone https://github.com/goshitsarch-eng/Vane.git
+cd Vane
+docker compose up -d
+```
+
+This uses the `docker-compose.yaml` from this fork which is pre-configured with the correct image name.
+
 #### Using Vane with Your Own SearxNG Instance
 
-If you already have SearxNG running, you can use the slim version of Vane:
+If you already have SearxNG running, you can use the slim version:
 
+**This fork:**
+```bash
+docker run -d -p 3000:3000 -e SEARXNG_API_URL=http://your-searxng-url:8080 -v vane-data:/home/vane/data --name vane goshitsarch/vane:slim-latest
+```
+
+**Upstream:**
 ```bash
 docker run -d -p 3000:3000 -e SEARXNG_API_URL=http://your-searxng-url:8080 -v vane-data:/home/vane/data --name vane itzcrazykns1337/vane:slim-latest
 ```
@@ -122,10 +148,10 @@ Replace `http://your-searxng-url:8080` with your actual SearxNG URL. Then config
 If you prefer to build from source or need more control:
 
 1. Ensure Docker is installed and running on your system.
-2. Clone the Vane repository:
+2. Clone this fork's repository:
 
    ```bash
-   git clone https://github.com/ItzCrazyKns/Vane.git
+   git clone https://github.com/goshitsarch-eng/Vane.git
    ```
 
 3. After cloning, navigate to the directory containing the project files.
@@ -247,7 +273,7 @@ Vane runs on Next.js and handles all API requests. It works right away on the sa
 [![Deploy to Sealos](https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg)](https://usw.sealos.io/?openapp=system-template%3FtemplateName%3Dperplexica)
 [![Deploy to RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/?app_id=267)
 [![Run on ClawCloud](https://raw.githubusercontent.com/ClawCloud/Run-Template/refs/heads/main/Run-on-ClawCloud.svg)](https://template.run.claw.cloud/?referralCode=U11MRQ8U9RM4&openapp=system-fastdeploy%3FtemplateName%3Dperplexica)
-[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/vps/docker-hosting?compose_url=https://raw.githubusercontent.com/ItzCrazyKns/Vane/refs/heads/master/docker-compose.yaml)
+[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/vps/docker-hosting?compose_url=https://raw.githubusercontent.com/goshitsarch-eng/Vane/refs/heads/master/docker-compose.yaml)
 
 ## Upcoming Features
 

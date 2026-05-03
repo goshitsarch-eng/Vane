@@ -1,12 +1,12 @@
 name: Build & Push Docker Images
 
 on:
-  push:
-    branches:
-      - master
-      - canary
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to push (e.g. latest, v1.2.3)'
+        required: false
+        default: 'latest'
 
 jobs:
   build-amd64:
@@ -33,48 +33,17 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract version from release tag
-        if: github.event_name == 'release'
-        id: version
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
-      - name: Build and push AMD64 Docker image (master)
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      - name: Build and push AMD64
         run: |
           DOCKERFILE=${{ matrix.variant.dockerfile }}
           VARIANT=${{ matrix.variant.name }}
+          TAG=${{ github.event.inputs.tag }}
           docker buildx build --platform linux/amd64 \
-            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-amd64 \
+            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-${TAG}-amd64 \
             --cache-to=type=inline \
             --provenance false \
             -f $DOCKERFILE \
-            -t goshitsarch/vane:${VARIANT}-amd64 \
-            --push .
-
-      - name: Build and push AMD64 Canary Docker image
-        if: github.ref == 'refs/heads/canary' && github.event_name == 'push'
-        run: |
-          DOCKERFILE=${{ matrix.variant.dockerfile }}
-          VARIANT=${{ matrix.variant.name }}
-          docker buildx build --platform linux/amd64 \
-            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-canary-amd64 \
-            --cache-to=type=inline \
-            --provenance false \
-            -f $DOCKERFILE \
-            -t goshitsarch/vane:${VARIANT}-canary-amd64 \
-            --push .
-
-      - name: Build and push AMD64 release Docker image
-        if: github.event_name == 'release'
-        run: |
-          DOCKERFILE=${{ matrix.variant.dockerfile }}
-          VARIANT=${{ matrix.variant.name }}
-          docker buildx build --platform linux/amd64 \
-            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-amd64 \
-            --cache-to=type=inline \
-            --provenance false \
-            -f $DOCKERFILE \
-            -t goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-amd64 \
+            -t goshitsarch/vane:${VARIANT}-${TAG}-amd64 \
             --push .
 
   build-arm64:
@@ -101,48 +70,17 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract version from release tag
-        if: github.event_name == 'release'
-        id: version
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
-      - name: Build and push ARM64 Docker image (master)
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      - name: Build and push ARM64
         run: |
           DOCKERFILE=${{ matrix.variant.dockerfile }}
           VARIANT=${{ matrix.variant.name }}
+          TAG=${{ github.event.inputs.tag }}
           docker buildx build --platform linux/arm64 \
-            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-arm64 \
+            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-${TAG}-arm64 \
             --cache-to=type=inline \
             --provenance false \
             -f $DOCKERFILE \
-            -t goshitsarch/vane:${VARIANT}-arm64 \
-            --push .
-
-      - name: Build and push ARM64 Canary Docker image
-        if: github.ref == 'refs/heads/canary' && github.event_name == 'push'
-        run: |
-          DOCKERFILE=${{ matrix.variant.dockerfile }}
-          VARIANT=${{ matrix.variant.name }}
-          docker buildx build --platform linux/arm64 \
-            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-canary-arm64 \
-            --cache-to=type=inline \
-            --provenance false \
-            -f $DOCKERFILE \
-            -t goshitsarch/vane:${VARIANT}-canary-arm64 \
-            --push .
-
-      - name: Build and push ARM64 release Docker image
-        if: github.event_name == 'release'
-        run: |
-          DOCKERFILE=${{ matrix.variant.dockerfile }}
-          VARIANT=${{ matrix.variant.name }}
-          docker buildx build --platform linux/arm64 \
-            --cache-from=type=registry,ref=goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-arm64 \
-            --cache-to=type=inline \
-            --provenance false \
-            -f $DOCKERFILE \
-            -t goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-arm64 \
+            -t goshitsarch/vane:${VARIANT}-${TAG}-arm64 \
             --push .
 
   manifest:
@@ -158,60 +96,18 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract version from release tag
-        if: github.event_name == 'release'
-        id: version
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
-      - name: Create and push manifest for main
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      - name: Create and push multi-arch manifest
         run: |
           VARIANT=${{ matrix.variant }}
-          docker manifest create goshitsarch/vane:${VARIANT}-latest \
-            --amend goshitsarch/vane:${VARIANT}-amd64 \
-            --amend goshitsarch/vane:${VARIANT}-arm64
-          docker manifest push goshitsarch/vane:${VARIANT}-latest
+          TAG=${{ github.event.inputs.tag }}
+          docker manifest create goshitsarch/vane:${VARIANT}-${TAG} \
+            --amend goshitsarch/vane:${VARIANT}-${TAG}-amd64 \
+            --amend goshitsarch/vane:${VARIANT}-${TAG}-arm64
+          docker manifest push goshitsarch/vane:${VARIANT}-${TAG}
 
-          if [ "$VARIANT" = "full" ]; then
+          if [ "$VARIANT" = "full" ] && [ "$TAG" = "latest" ]; then
             docker manifest create goshitsarch/vane:latest \
-              --amend goshitsarch/vane:${VARIANT}-amd64 \
-              --amend goshitsarch/vane:${VARIANT}-arm64
+              --amend goshitsarch/vane:${VARIANT}-${TAG}-amd64 \
+              --amend goshitsarch/vane:${VARIANT}-${TAG}-arm64
             docker manifest push goshitsarch/vane:latest
-
-            docker manifest create goshitsarch/vane:main \
-              --amend goshitsarch/vane:${VARIANT}-amd64 \
-              --amend goshitsarch/vane:${VARIANT}-arm64
-            docker manifest push goshitsarch/vane:main
-          fi
-
-      - name: Create and push manifest for canary
-        if: github.ref == 'refs/heads/canary' && github.event_name == 'push'
-        run: |
-          VARIANT=${{ matrix.variant }}
-          docker manifest create goshitsarch/vane:${VARIANT}-canary \
-            --amend goshitsarch/vane:${VARIANT}-canary-amd64 \
-            --amend goshitsarch/vane:${VARIANT}-canary-arm64
-          docker manifest push goshitsarch/vane:${VARIANT}-canary
-
-          if [ "$VARIANT" = "full" ]; then
-            docker manifest create goshitsarch/vane:canary \
-              --amend goshitsarch/vane:${VARIANT}-canary-amd64 \
-              --amend goshitsarch/vane:${VARIANT}-canary-arm64
-            docker manifest push goshitsarch/vane:canary
-          fi
-
-      - name: Create and push manifest for releases
-        if: github.event_name == 'release'
-        run: |
-          VARIANT=${{ matrix.variant }}
-          docker manifest create goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }} \
-            --amend goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-amd64 \
-            --amend goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-arm64
-          docker manifest push goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}
-
-          if [ "$VARIANT" = "full" ]; then
-            docker manifest create goshitsarch/vane:${{ env.RELEASE_VERSION }} \
-              --amend goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-amd64 \
-              --amend goshitsarch/vane:${VARIANT}-${{ env.RELEASE_VERSION }}-arm64
-            docker manifest push goshitsarch/vane:${{ env.RELEASE_VERSION }}
           fi

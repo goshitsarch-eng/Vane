@@ -1,30 +1,48 @@
 import ModelRegistry from '@/lib/models/registry';
-import { ModelWithProvider } from '@/lib/models/types';
 import SessionManager from '@/lib/session';
 import { ChatTurnMessage } from '@/lib/types';
-import { SearchSources } from '@/lib/agents/search/types';
 import APISearchAgent from '@/lib/agents/search/api';
 import {
   createRequestContext,
   logRequestEvent,
   serializeError,
 } from '@/lib/observability/request';
+import { z } from 'zod';
+import {
+  chatHistorySchema,
+  modelWithProviderSchema,
+  parseRequestBody,
+} from '@/lib/validation';
 
-interface ChatRequestBody {
-  optimizationMode: 'speed' | 'balanced' | 'quality';
-  sources: SearchSources[];
-  chatModel: ModelWithProvider;
-  embeddingModel?: ModelWithProvider | null;
-  query: string;
-  history: Array<[string, string]>;
-  stream?: boolean;
-  systemInstructions?: string;
-}
+const bodySchema = z.object({
+  optimizationMode: z.enum(['speed', 'balanced', 'quality']).default('speed'),
+  sources: z
+    .array(z.enum(['web', 'discussions', 'academic']))
+    .min(1, 'At least one search source is required'),
+  chatModel: modelWithProviderSchema,
+  embeddingModel: modelWithProviderSchema.optional().nullable(),
+  query: z.string().min(1, 'Query is required'),
+  history: chatHistorySchema,
+  stream: z.boolean().optional().default(false),
+  systemInstructions: z.string().optional().default(''),
+});
+
+type ChatRequestBody = z.infer<typeof bodySchema>;
 
 export const POST = async (req: Request) => {
   const context = createRequestContext(req, '/api/search');
   try {
-    const body: ChatRequestBody = await req.json();
+    const parseBody = await parseRequestBody(
+      req,
+      bodySchema,
+      context.requestId,
+    );
+
+    if (!parseBody.success) {
+      return parseBody.response;
+    }
+
+    const body: ChatRequestBody = parseBody.data;
     logRequestEvent(context, 'api.search.request.start', {
       stream: Boolean(body.stream),
       sources: body.sources,
@@ -34,23 +52,26 @@ export const POST = async (req: Request) => {
       embeddingModel: body.embeddingModel?.key,
     });
 
-    if (!body.sources || !body.query) {
-      return Response.json(
-        { message: 'Missing sources or query' },
-        { status: 400 },
-      );
-    }
-
-    body.history = body.history || [];
-    body.optimizationMode = body.optimizationMode || 'speed';
-    body.stream = body.stream || false;
-
     const registry = new ModelRegistry(context);
 
-    const llm = await registry.loadChatModel(
-      body.chatModel.providerId,
-      body.chatModel.key,
-    );
+    let llm;
+    try {
+      llm = await registry.loadChatModel(
+        body.chatModel.providerId,
+        body.chatModel.key,
+      );
+    } catch (err: any) {
+      const isMissingProvider = err.message === 'Invalid provider id';
+      return Response.json(
+        {
+          message: isMissingProvider
+            ? 'No AI model is configured. Please add a model provider in Settings.'
+            : err.message || 'Failed to load AI model',
+          requestId: context.requestId,
+        },
+        { status: isMissingProvider ? 400 : 500 },
+      );
+    }
 
     let embeddings = null;
     if (body.embeddingModel) {
@@ -110,15 +131,11 @@ export const POST = async (req: Request) => {
       });
 
     if (!body.stream) {
-      return new Promise(
-        (
-          resolve: (value: Response) => void,
-          reject: (value: Response) => void,
-        ) => {
-          let message = '';
-          let sources: any[] = [];
-
-          session.subscribe((event: string, data: Record<string, any>) => {
+      return new Promise((resolve: (value: Response) => void) => {
+        let message = '';
+        let sources: any[] = [];
+        const disconnect = session.subscribe(
+          (event: string, data: Record<string, any>) => {
             if (event === 'data') {
               try {
                 if (data.type === 'response') {
@@ -127,7 +144,8 @@ export const POST = async (req: Request) => {
                   sources = data.data;
                 }
               } catch (error) {
-                reject(
+                disconnect();
+                resolve(
                   Response.json(
                     { message: 'Error parsing data' },
                     { status: 500 },
@@ -137,6 +155,7 @@ export const POST = async (req: Request) => {
             }
 
             if (event === 'end') {
+              disconnect();
               logRequestEvent(context, 'api.search.request.success', {
                 sourceCount: sources.length,
                 messageLength: message.length,
@@ -145,22 +164,23 @@ export const POST = async (req: Request) => {
             }
 
             if (event === 'error') {
+              disconnect();
               logRequestEvent(
                 context,
                 'api.search.request.error',
                 { error: data },
                 'error',
               );
-              reject(
+              resolve(
                 Response.json(
                   { message: 'Search error', error: data },
                   { status: 500 },
                 ),
               );
             }
-          });
-        },
-      );
+          },
+        );
+      });
     }
 
     const encoder = new TextEncoder();
@@ -173,20 +193,21 @@ export const POST = async (req: Request) => {
         let sources: any[] = [];
         let streamClosed = false;
 
+        const enqueue = (event: Record<string, unknown>) => {
+          if (streamClosed) return;
+          controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
+        };
+
         const closeStream = () => {
           if (streamClosed) return;
           streamClosed = true;
           controller.close();
         };
 
-        controller.enqueue(
-          encoder.encode(
-            JSON.stringify({
-              type: 'init',
-              data: 'Stream connected',
-            }) + '\n',
-          ),
-        );
+        enqueue({
+          type: 'init',
+          data: 'Stream connected',
+        });
         logRequestEvent(context, 'api.search.stream.open');
 
         signal.addEventListener('abort', () => {
@@ -197,72 +218,63 @@ export const POST = async (req: Request) => {
           } catch (error) {}
         });
 
-        session.subscribe((event: string, data: Record<string, any>) => {
-          if (event === 'data') {
-            if (signal.aborted) return;
+        const disconnect = session.subscribe(
+          (event: string, data: Record<string, any>) => {
+            if (event === 'data') {
+              if (signal.aborted) return;
 
-            try {
-              if (data.type === 'response') {
-                controller.enqueue(
-                  encoder.encode(
-                    JSON.stringify({
-                      type: 'response',
-                      data: data.data,
-                    }) + '\n',
-                  ),
-                );
-              } else if (data.type === 'searchResults') {
-                sources = data.data;
-                controller.enqueue(
-                  encoder.encode(
-                    JSON.stringify({
-                      type: 'sources',
-                      data: sources,
-                    }) + '\n',
-                  ),
-                );
+              try {
+                if (data.type === 'response') {
+                  enqueue({
+                    type: 'response',
+                    data: data.data,
+                  });
+                } else if (data.type === 'searchResults') {
+                  sources = data.data;
+                  enqueue({
+                    type: 'sources',
+                    data: sources,
+                  });
+                }
+              } catch (error) {
+                if (!streamClosed) {
+                  streamClosed = true;
+                  controller.error(error);
+                }
               }
-            } catch (error) {
-              controller.error(error);
             }
-          }
 
-          if (event === 'end') {
-            if (signal.aborted) return;
+            if (event === 'end') {
+              if (signal.aborted) return;
 
-            controller.enqueue(
-              encoder.encode(
-                JSON.stringify({
-                  type: 'done',
-                }) + '\n',
-              ),
-            );
-            closeStream();
-            logRequestEvent(context, 'api.search.stream.done', {
-              sourceCount: sources.length,
-            });
-          }
+              disconnect();
+              enqueue({
+                type: 'done',
+              });
+              closeStream();
+              logRequestEvent(context, 'api.search.stream.done', {
+                sourceCount: sources.length,
+              });
+            }
 
-          if (event === 'error') {
-            if (signal.aborted) return;
+            if (event === 'error') {
+              if (signal.aborted) return;
 
-            controller.enqueue(
-              encoder.encode(
-                JSON.stringify({
-                  type: 'error',
-                  data,
-                }) + '\n',
-              ),
-            );
-            closeStream();
-            logRequestEvent(
-              context,
-              'api.search.stream.error',
-              { error: data },
-              'error',
-            );
-          }
-        });
+              disconnect();
+              enqueue({
+                type: 'error',
+                data,
+              });
+              closeStream();
+              logRequestEvent(
+                context,
+                'api.search.stream.error',
+                { error: data },
+                'error',
+              );
+            }
+          },
+        );
       },
       cancel() {
         abortController.abort();

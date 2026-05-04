@@ -5,6 +5,16 @@ import {
   logRequestEvent,
   serializeError,
 } from '@/lib/observability/request';
+import { parseRequestBody } from '@/lib/validation';
+import { z } from 'zod';
+
+const providerConfigSchema = z.record(z.string(), z.any());
+
+const createProviderSchema = z.object({
+  type: z.string().min(1, 'Provider type is required'),
+  name: z.string().min(1, 'Provider name is required'),
+  config: providerConfigSchema,
+});
 
 export const GET = async (req: Request) => {
   const context = createRequestContext(req, '/api/providers');
@@ -51,24 +61,37 @@ export const GET = async (req: Request) => {
 export const POST = async (req: NextRequest) => {
   const context = createRequestContext(req, '/api/providers');
   try {
-    const body = await req.json();
-    const { type, name, config } = body;
+    const parseBody = await parseRequestBody(
+      req,
+      createProviderSchema,
+      context.requestId,
+    );
 
-    if (!type || !name || !config) {
-      return Response.json(
-        {
-          message: 'Missing required fields.',
-        },
-        {
-          status: 400,
-        },
-      );
+    if (!parseBody.success) {
+      return parseBody.response;
     }
+
+    const { type, name, config } = parseBody.data;
 
     logRequestEvent(context, 'providers.create.start', { type, name });
     const registry = new ModelRegistry(context);
 
-    const newProvider = await registry.addProvider(type, name, config);
+    let newProvider;
+    try {
+      newProvider = await registry.addProvider(type, name, config);
+    } catch (err: any) {
+      if (err.message === 'Invalid provider type') {
+        return Response.json(
+          {
+            message: err.message,
+            requestId: context.requestId,
+          },
+          { status: 400 },
+        );
+      }
+
+      throw err;
+    }
 
     logRequestEvent(context, 'providers.create.success', {
       providerId: newProvider.id,

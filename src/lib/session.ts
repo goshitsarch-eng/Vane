@@ -1,4 +1,4 @@
-import { EventEmitter } from 'stream';
+import { EventEmitter } from 'node:events';
 import { applyPatch } from 'rfc6902';
 import { Block } from './types';
 
@@ -19,9 +19,10 @@ class SessionManager {
   constructor(id?: string) {
     this.id = id ?? crypto.randomUUID();
 
-    setTimeout(() => {
+    const ttlTimer = setTimeout(() => {
       SessionManager.sessions.delete(this.id);
     }, this.TTL_MS);
+    ttlTimer.unref?.();
   }
 
   static getSession(id: string): SessionManager | undefined {
@@ -78,23 +79,33 @@ class SessionManager {
   }
 
   subscribe(listener: (event: string, data: any) => void): () => void {
-    const currentEventsLength = this.events.length;
+    let active = true;
 
     const handler = (event: string) => (data: any) => listener(event, data);
     const dataHandler = handler('data');
     const endHandler = handler('end');
     const errorHandler = handler('error');
 
-    this.emitter.on('data', dataHandler);
-    this.emitter.on('end', endHandler);
-    this.emitter.on('error', errorHandler);
+    queueMicrotask(() => {
+      if (!active) return;
 
-    for (let i = 0; i < currentEventsLength; i++) {
-      const { event, data } = this.events[i];
-      listener(event, data);
-    }
+      const replayEvents = this.events.slice();
+
+      for (let i = 0; i < replayEvents.length; i++) {
+        if (!active) return;
+        const { event, data } = replayEvents[i];
+        listener(event, data);
+      }
+
+      if (!active) return;
+
+      this.emitter.on('data', dataHandler);
+      this.emitter.on('end', endHandler);
+      this.emitter.on('error', errorHandler);
+    });
 
     return () => {
+      active = false;
       this.emitter.off('data', dataHandler);
       this.emitter.off('end', endHandler);
       this.emitter.off('error', errorHandler);

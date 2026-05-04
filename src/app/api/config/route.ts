@@ -7,11 +7,15 @@ import {
   logRequestEvent,
   serializeError,
 } from '@/lib/observability/request';
+import { z } from 'zod';
+import { parseRequestBody } from '@/lib/validation';
 
-type SaveConfigBody = {
-  key: string;
-  value: string;
-};
+const saveConfigBodySchema = z.object({
+  key: z.string().min(1, 'Config key is required'),
+  value: z.any().refine((value) => value !== undefined, {
+    message: 'Config value is required',
+  }),
+});
 
 export const GET = async (req: NextRequest) => {
   const context = createRequestContext(req, '/api/config');
@@ -61,18 +65,17 @@ export const GET = async (req: NextRequest) => {
 export const POST = async (req: NextRequest) => {
   const context = createRequestContext(req, '/api/config');
   try {
-    const body: SaveConfigBody = await req.json();
+    const parseBody = await parseRequestBody(
+      req,
+      saveConfigBodySchema,
+      context.requestId,
+    );
 
-    if (!body.key || !body.value) {
-      return Response.json(
-        {
-          message: 'Key and value are required.',
-        },
-        {
-          status: 400,
-        },
-      );
+    if (!parseBody.success) {
+      return parseBody.response;
     }
+
+    const body = parseBody.data;
 
     configManager.updateConfig(body.key, body.value);
     logRequestEvent(context, 'config.update.success', { key: body.key });

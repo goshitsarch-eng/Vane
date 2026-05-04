@@ -4,12 +4,11 @@ import { Config, ConfigModelProvider, UIConfigSections } from './types';
 import { Model } from '../models/types';
 import { hashObj } from '../utils/hash';
 import { getModelProvidersUIConfigSection } from '../models/providers';
+import { dataPath } from '../paths';
+import { writeJsonAtomicSync } from '../utils/atomic';
 
 class ConfigManager {
-  configPath: string = path.join(
-    process.env.DATA_DIR || process.cwd(),
-    '/data/config.json',
-  );
+  configPath: string = dataPath('config.json');
   configVersion = 1;
   currentConfig: Config = {
     version: this.configVersion,
@@ -178,19 +177,13 @@ class ConfigManager {
   }
 
   private saveConfig() {
-    fs.writeFileSync(
-      this.configPath,
-      JSON.stringify(this.currentConfig, null, 2),
-    );
+    writeJsonAtomicSync(this.configPath, this.currentConfig);
   }
 
   private initializeConfig() {
     const exists = fs.existsSync(this.configPath);
     if (!exists) {
-      fs.writeFileSync(
-        this.configPath,
-        JSON.stringify(this.currentConfig, null, 2),
-      );
+      this.saveConfig();
     } else {
       try {
         this.currentConfig = JSON.parse(
@@ -205,10 +198,7 @@ class ConfigManager {
           console.log(
             'Loading default config and overwriting the existing file.',
           );
-          fs.writeFileSync(
-            this.configPath,
-            JSON.stringify(this.currentConfig, null, 2),
-          );
+          this.saveConfig();
           return;
         } else {
           console.log('Unknown error reading config file:', err);

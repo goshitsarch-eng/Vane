@@ -1,13 +1,14 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { dataPath, ensureDataDir, MIGRATIONS_ROOT } from '@/lib/paths';
 
-const DATA_DIR = process.env.DATA_DIR || process.cwd();
-const dbPath = path.join(DATA_DIR, './data/db.sqlite');
+ensureDataDir();
 
+const dbPath = dataPath('db.sqlite');
 const db = new Database(dbPath);
 
-const migrationsFolder = path.join(DATA_DIR, 'drizzle');
+const migrationsFolder = MIGRATIONS_ROOT;
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ran_migrations (

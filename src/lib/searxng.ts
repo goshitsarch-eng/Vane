@@ -1,10 +1,14 @@
 import { getSearxngURL } from './config/serverRegistry';
+import { fetchJsonWithRetry } from './search/utils';
 
 export interface SearxngSearchOptions {
   categories?: string[];
   engines?: string[];
   language?: string;
   pageno?: number;
+  requestId?: string;
+  timeoutMs?: number;
+  retries?: number;
 }
 
 interface SearxngSearchResult {
@@ -23,12 +27,21 @@ export const searchSearxng = async (
   opts?: SearxngSearchOptions,
 ) => {
   const searxngURL = getSearxngURL();
+  if (!searxngURL) {
+    throw new Error(
+      'SearXNG URL is not configured. Please add it in Settings > Search.',
+    );
+  }
 
   const url = new URL(`${searxngURL}/search?format=json`);
   url.searchParams.append('q', query);
 
   if (opts) {
     Object.keys(opts).forEach((key) => {
+      if (key === 'requestId' || key === 'timeoutMs' || key === 'retries') {
+        return;
+      }
+
       const value = opts[key as keyof SearxngSearchOptions];
       if (Array.isArray(value)) {
         url.searchParams.append(key, value.join(','));
@@ -38,30 +51,22 @@ export const searchSearxng = async (
     });
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const data = await fetchJsonWithRetry<{
+    results?: SearxngSearchResult[];
+    suggestions?: string[];
+  }>(
+    url,
+    {},
+    {
+      backend: 'searxng',
+      requestId: opts?.requestId,
+      timeoutMs: opts?.timeoutMs,
+      retries: opts?.retries,
+    },
+  );
 
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      throw new Error(`SearXNG error: ${res.statusText}`);
-    }
-
-    const data = await res.json();
-
-    const results: SearxngSearchResult[] = data.results;
-    const suggestions: string[] = data.suggestions;
-
-    return { results, suggestions };
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      throw new Error('SearXNG search timed out');
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return {
+    results: data.results || [],
+    suggestions: data.suggestions || [],
+  };
 };

@@ -4,6 +4,11 @@ import SessionManager from '@/lib/session';
 import { ChatTurnMessage } from '@/lib/types';
 import { SearchSources } from '@/lib/agents/search/types';
 import APISearchAgent from '@/lib/agents/search/api';
+import {
+  createRequestContext,
+  logRequestEvent,
+  serializeError,
+} from '@/lib/observability/request';
 
 interface ChatRequestBody {
   optimizationMode: 'speed' | 'balanced' | 'quality';
@@ -17,8 +22,17 @@ interface ChatRequestBody {
 }
 
 export const POST = async (req: Request) => {
+  const context = createRequestContext(req, '/api/search');
   try {
     const body: ChatRequestBody = await req.json();
+    logRequestEvent(context, 'api.search.request.start', {
+      stream: Boolean(body.stream),
+      sources: body.sources,
+      chatProviderId: body.chatModel?.providerId,
+      chatModel: body.chatModel?.key,
+      embeddingProviderId: body.embeddingModel?.providerId,
+      embeddingModel: body.embeddingModel?.key,
+    });
 
     if (!body.sources || !body.query) {
       return Response.json(
@@ -31,7 +45,7 @@ export const POST = async (req: Request) => {
     body.optimizationMode = body.optimizationMode || 'speed';
     body.stream = body.stream || false;
 
-    const registry = new ModelRegistry();
+    const registry = new ModelRegistry(context);
 
     const llm = await registry.loadChatModel(
       body.chatModel.providerId,
@@ -46,6 +60,12 @@ export const POST = async (req: Request) => {
           body.embeddingModel.key,
         );
       } catch (err: any) {
+        logRequestEvent(
+          context,
+          'api.search.embedding.load_failed',
+          { error: serializeError(err) },
+          'warn',
+        );
         embeddings = null;
       }
     }
@@ -60,20 +80,34 @@ export const POST = async (req: Request) => {
 
     const agent = new APISearchAgent();
 
-    agent.searchAsync(session, {
-      chatHistory: history,
-      config: {
-        embedding: embeddings,
-        llm: llm,
-        sources: body.sources,
-        mode: body.optimizationMode,
-        fileIds: [],
-        systemInstructions: body.systemInstructions || '',
-      },
-      followUp: body.query,
-      chatId: crypto.randomUUID(),
-      messageId: crypto.randomUUID(),
-    });
+    agent
+      .searchAsync(session, {
+        chatHistory: history,
+        config: {
+          embedding: embeddings,
+          llm: llm,
+          sources: body.sources,
+          mode: body.optimizationMode,
+          fileIds: [],
+          systemInstructions: body.systemInstructions || '',
+          requestId: context.requestId,
+        },
+        followUp: body.query,
+        chatId: crypto.randomUUID(),
+        messageId: crypto.randomUUID(),
+      })
+      .catch((err) => {
+        logRequestEvent(
+          context,
+          'api.search.agent.error',
+          { error: serializeError(err) },
+          'error',
+        );
+        session.emit('error', {
+          data: err instanceof Error ? err.message : 'Search error',
+        });
+        session.emit('end', {});
+      });
 
     if (!body.stream) {
       return new Promise(
@@ -103,10 +137,20 @@ export const POST = async (req: Request) => {
             }
 
             if (event === 'end') {
+              logRequestEvent(context, 'api.search.request.success', {
+                sourceCount: sources.length,
+                messageLength: message.length,
+              });
               resolve(Response.json({ message, sources }, { status: 200 }));
             }
 
             if (event === 'error') {
+              logRequestEvent(
+                context,
+                'api.search.request.error',
+                { error: data },
+                'error',
+              );
               reject(
                 Response.json(
                   { message: 'Search error', error: data },
@@ -127,6 +171,13 @@ export const POST = async (req: Request) => {
     const stream = new ReadableStream({
       start(controller) {
         let sources: any[] = [];
+        let streamClosed = false;
+
+        const closeStream = () => {
+          if (streamClosed) return;
+          streamClosed = true;
+          controller.close();
+        };
 
         controller.enqueue(
           encoder.encode(
@@ -136,12 +187,13 @@ export const POST = async (req: Request) => {
             }) + '\n',
           ),
         );
+        logRequestEvent(context, 'api.search.stream.open');
 
         signal.addEventListener('abort', () => {
           session.removeAllListeners();
 
           try {
-            controller.close();
+            closeStream();
           } catch (error) {}
         });
 
@@ -185,18 +237,36 @@ export const POST = async (req: Request) => {
                 }) + '\n',
               ),
             );
-            controller.close();
+            closeStream();
+            logRequestEvent(context, 'api.search.stream.done', {
+              sourceCount: sources.length,
+            });
           }
 
           if (event === 'error') {
             if (signal.aborted) return;
 
-            controller.error(data);
+            controller.enqueue(
+              encoder.encode(
+                JSON.stringify({
+                  type: 'error',
+                  data,
+                }) + '\n',
+              ),
+            );
+            closeStream();
+            logRequestEvent(
+              context,
+              'api.search.stream.error',
+              { error: data },
+              'error',
+            );
           }
         });
       },
       cancel() {
         abortController.abort();
+        logRequestEvent(context, 'api.search.stream.cancel');
       },
     });
 
@@ -208,9 +278,17 @@ export const POST = async (req: Request) => {
       },
     });
   } catch (err: any) {
-    console.error(`Error in getting search results: ${err.message}`);
+    logRequestEvent(
+      context,
+      'api.search.request.exception',
+      { error: serializeError(err) },
+      'error',
+    );
     return Response.json(
-      { message: 'An error has occurred.' },
+      {
+        message: 'An error has occurred.',
+        requestId: context.requestId,
+      },
       { status: 500 },
     );
   }

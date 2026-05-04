@@ -9,6 +9,11 @@ import db from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { chats } from '@/lib/db/schema';
 import UploadManager from '@/lib/uploads/manager';
+import {
+  createRequestContext,
+  logRequestEvent,
+  serializeError,
+} from '@/lib/observability/request';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,8 +114,10 @@ const ensureChatExists = async (input: {
 };
 
 export const POST = async (req: Request) => {
+  const context = createRequestContext(req, '/api/chat');
   try {
     const reqBody = (await req.json()) as Body;
+    logRequestEvent(context, 'api.chat.request.start');
 
     const parseBody = safeValidateBody(reqBody);
 
@@ -123,6 +130,15 @@ export const POST = async (req: Request) => {
 
     const body = parseBody.data as Body;
     const { message } = body;
+    logRequestEvent(context, 'api.chat.request.validated', {
+      chatId: body.message.chatId,
+      messageId: body.message.messageId,
+      sources: body.sources,
+      chatProviderId: body.chatModel.providerId,
+      chatModel: body.chatModel.key,
+      embeddingProviderId: body.embeddingModel?.providerId,
+      embeddingModel: body.embeddingModel?.key,
+    });
 
     if (message.content === '') {
       return Response.json(
@@ -133,9 +149,10 @@ export const POST = async (req: Request) => {
       );
     }
 
-    const registry = new ModelRegistry();
+    const registry = new ModelRegistry(context);
 
-    let llm, embedding = null;
+    let llm;
+    let embedding = null;
     try {
       llm = await registry.loadChatModel(
         body.chatModel.providerId,
@@ -148,6 +165,7 @@ export const POST = async (req: Request) => {
           message: isMissingProvider
             ? 'No AI model is configured. Please add a model provider in Settings.'
             : err.message || 'Failed to load AI model',
+          requestId: context.requestId,
         },
         { status: isMissingProvider ? 400 : 500 },
       );
@@ -160,6 +178,12 @@ export const POST = async (req: Request) => {
           body.embeddingModel.key,
         );
       } catch (err: any) {
+        logRequestEvent(
+          context,
+          'api.chat.embedding.load_failed',
+          { error: serializeError(err) },
+          'warn',
+        );
         embedding = null;
       }
     }
@@ -184,58 +208,69 @@ export const POST = async (req: Request) => {
     const responseStream = new TransformStream();
     const writer = responseStream.writable.getWriter();
     const encoder = new TextEncoder();
+    let streamClosed = false;
+
+    const writeStreamEvent = (event: Record<string, unknown>) => {
+      if (streamClosed) return;
+      writer
+        .write(encoder.encode(JSON.stringify(event) + '\n'))
+        .catch((err) => {
+          logRequestEvent(
+            context,
+            'api.chat.stream.write_failed',
+            { error: serializeError(err) },
+            'warn',
+          );
+        });
+    };
+
+    const closeStream = () => {
+      if (streamClosed) return;
+      streamClosed = true;
+      writer.close().catch(() => {});
+    };
 
     const disconnect = session.subscribe((event: string, data: any) => {
       if (event === 'data') {
         if (data.type === 'block') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'block',
-                block: data.block,
-              }) + '\n',
-            ),
-          );
+          writeStreamEvent({
+            type: 'block',
+            block: data.block,
+          });
         } else if (data.type === 'updateBlock') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'updateBlock',
-                blockId: data.blockId,
-                patch: data.patch,
-              }) + '\n',
-            ),
-          );
+          writeStreamEvent({
+            type: 'updateBlock',
+            blockId: data.blockId,
+            patch: data.patch,
+          });
         } else if (data.type === 'researchComplete') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'researchComplete',
-              }) + '\n',
-            ),
-          );
+          writeStreamEvent({
+            type: 'researchComplete',
+          });
         }
       } else if (event === 'end') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'messageEnd',
-            }) + '\n',
-          ),
-        );
-        writer.close();
+        writeStreamEvent({
+          type: 'messageEnd',
+        });
+        closeStream();
         session.removeAllListeners();
+        logRequestEvent(context, 'api.chat.stream.done', {
+          chatId: body.message.chatId,
+          messageId: body.message.messageId,
+        });
       } else if (event === 'error') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'error',
-              data: data.data,
-            }) + '\n',
-          ),
-        );
-        writer.close();
+        writeStreamEvent({
+          type: 'error',
+          data: data.data,
+        });
+        closeStream();
         session.removeAllListeners();
+        logRequestEvent(
+          context,
+          'api.chat.stream.error',
+          { error: data },
+          'error',
+        );
       }
     });
 
@@ -252,10 +287,16 @@ export const POST = async (req: Request) => {
           mode: body.optimizationMode,
           fileIds: body.files,
           systemInstructions: body.systemInstructions || 'None',
+          requestId: context.requestId,
         },
       })
       .catch((err) => {
-        console.error('Unhandled error in searchAsync:', err);
+        logRequestEvent(
+          context,
+          'api.chat.agent.error',
+          { error: serializeError(err) },
+          'error',
+        );
         try {
           session.emit('error', {
             data:
@@ -278,7 +319,8 @@ export const POST = async (req: Request) => {
 
     req.signal.addEventListener('abort', () => {
       disconnect();
-      writer.close();
+      closeStream();
+      logRequestEvent(context, 'api.chat.stream.abort');
     });
 
     return new Response(responseStream.readable, {
@@ -289,9 +331,17 @@ export const POST = async (req: Request) => {
       },
     });
   } catch (err) {
-    console.error('An error occurred while processing chat request:', err);
+    logRequestEvent(
+      context,
+      'api.chat.request.exception',
+      { error: serializeError(err) },
+      'error',
+    );
     return Response.json(
-      { message: 'An error occurred while processing chat request' },
+      {
+        message: 'An error occurred while processing chat request',
+        requestId: context.requestId,
+      },
       { status: 500 },
     );
   }

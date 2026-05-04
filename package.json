@@ -8,7 +8,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "format:write": "prettier . --write"
+    "format:write": "prettier . --write",
+    "repro:providers": "node scripts/provider-repro.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",

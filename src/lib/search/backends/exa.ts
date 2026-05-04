@@ -1,13 +1,17 @@
 import configManager from '@/lib/config';
 import { SearchBackend, SearchOptions, SearchResult } from '../types';
+import { emptySearchResult, fetchJsonWithRetry } from '../utils';
 
 class ExaBackend implements SearchBackend {
   async search(query: string, opts?: SearchOptions): Promise<SearchResult> {
     const apiKey = configManager.getConfig('search.exaApiKey', '');
 
     if (!apiKey) {
-      throw new Error(
-        'Exa API key is not configured. Please add it in Settings > Search.',
+      return emptySearchResult(
+        'exa',
+        new Error(
+          'Exa API key is not configured. Please add it in Settings > Search.',
+        ),
       );
     }
 
@@ -28,26 +32,24 @@ class ExaBackend implements SearchBackend {
       body.excludeDomains = opts.excludeDomains;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
     try {
-      const res = await fetch('https://api.exa.ai/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
+      const data = await fetchJsonWithRetry<any>(
+        'https://api.exa.ai/search',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => res.statusText);
-        throw new Error(`Exa error: ${errorText}`);
-      }
-
-      const data = await res.json();
+        {
+          backend: 'exa',
+          requestId: opts?.requestId,
+          timeoutMs: opts?.timeoutMs,
+          retries: opts?.retries,
+        },
+      );
 
       const results = (data.results || []).map((r: any) => ({
         title: r.title || '',
@@ -61,12 +63,7 @@ class ExaBackend implements SearchBackend {
         suggestions: [],
       };
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        throw new Error('Exa search timed out');
-      }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
+      return emptySearchResult('exa', err, err?.status);
     }
   }
 }

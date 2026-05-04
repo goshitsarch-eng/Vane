@@ -1,13 +1,17 @@
 import configManager from '@/lib/config';
 import { SearchBackend, SearchOptions, SearchResult } from '../types';
+import { emptySearchResult, fetchJsonWithRetry } from '../utils';
 
 class BraveBackend implements SearchBackend {
   async search(query: string, opts?: SearchOptions): Promise<SearchResult> {
     const apiKey = configManager.getConfig('search.braveApiKey', '');
 
     if (!apiKey) {
-      throw new Error(
-        'Brave Search API key is not configured. Please add it in Settings > Search.',
+      return emptySearchResult(
+        'brave',
+        new Error(
+          'Brave Search API key is not configured. Please add it in Settings > Search.',
+        ),
       );
     }
 
@@ -16,25 +20,23 @@ class BraveBackend implements SearchBackend {
     url.searchParams.append('count', String(opts?.count || 10));
     url.searchParams.append('offset', '0');
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
     try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'X-Subscription-Token': apiKey,
+      const data = await fetchJsonWithRetry<any>(
+        url,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            'X-Subscription-Token': apiKey,
+          },
         },
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => res.statusText);
-        throw new Error(`Brave Search error: ${errorText}`);
-      }
-
-      const data = await res.json();
+        {
+          backend: 'brave',
+          requestId: opts?.requestId,
+          timeoutMs: opts?.timeoutMs,
+          retries: opts?.retries,
+        },
+      );
 
       const results = (data.web?.results || []).map((r: any) => ({
         title: r.title || '',
@@ -45,15 +47,11 @@ class BraveBackend implements SearchBackend {
 
       return {
         results,
-        suggestions: data.query?.autocompletions?.map((a: any) => a.query) || [],
+        suggestions:
+          data.query?.autocompletions?.map((a: any) => a.query) || [],
       };
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        throw new Error('Brave Search timed out');
-      }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
+      return emptySearchResult('brave', err, err?.status);
     }
   }
 }

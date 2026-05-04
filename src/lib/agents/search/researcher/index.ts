@@ -187,6 +187,7 @@ class Researcher {
         researchBlockId: researchBlockId,
         fileIds: input.config.fileIds,
         mode: input.config.mode,
+        requestId: input.config.requestId,
       });
 
       actionOutput.push(...actionResults);
@@ -214,6 +215,7 @@ class Researcher {
             researchBlockId: researchBlockId,
             fileIds: input.config.fileIds,
             mode: input.config.mode,
+            requestId: input.config.requestId,
           },
         );
 

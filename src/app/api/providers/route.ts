@@ -1,14 +1,25 @@
 import ModelRegistry from '@/lib/models/registry';
 import { NextRequest } from 'next/server';
+import {
+  createRequestContext,
+  logRequestEvent,
+  serializeError,
+} from '@/lib/observability/request';
 
 export const GET = async (req: Request) => {
+  const context = createRequestContext(req, '/api/providers');
   try {
-    const registry = new ModelRegistry();
+    logRequestEvent(context, 'providers.get.start');
+    const registry = new ModelRegistry(context);
 
     const activeProviders = await registry.getActiveProviders();
 
     const filteredProviders = activeProviders.filter((p) => {
       return !p.chatModels.some((m) => m.key === 'error');
+    });
+
+    logRequestEvent(context, 'providers.get.success', {
+      providerCount: filteredProviders.length,
     });
 
     return Response.json(
@@ -20,7 +31,12 @@ export const GET = async (req: Request) => {
       },
     );
   } catch (err) {
-    console.error('An error occurred while fetching providers', err);
+    logRequestEvent(
+      context,
+      'providers.get.error',
+      { error: serializeError(err) },
+      'error',
+    );
     return Response.json(
       {
         message: 'An error has occurred.',
@@ -33,6 +49,7 @@ export const GET = async (req: Request) => {
 };
 
 export const POST = async (req: NextRequest) => {
+  const context = createRequestContext(req, '/api/providers');
   try {
     const body = await req.json();
     const { type, name, config } = body;
@@ -48,9 +65,15 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    const registry = new ModelRegistry();
+    logRequestEvent(context, 'providers.create.start', { type, name });
+    const registry = new ModelRegistry(context);
 
     const newProvider = await registry.addProvider(type, name, config);
+
+    logRequestEvent(context, 'providers.create.success', {
+      providerId: newProvider.id,
+      type,
+    });
 
     return Response.json(
       {
@@ -61,7 +84,12 @@ export const POST = async (req: NextRequest) => {
       },
     );
   } catch (err) {
-    console.error('An error occurred while creating provider', err);
+    logRequestEvent(
+      context,
+      'providers.create.error',
+      { error: serializeError(err) },
+      'error',
+    );
     return Response.json(
       {
         message: 'An error has occurred.',

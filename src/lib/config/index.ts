@@ -135,7 +135,8 @@ class ConfigManager {
         key: 'braveApiKey',
         type: 'password',
         required: false,
-        description: 'Your Brave Search API key (required when using Brave backend)',
+        description:
+          'Your Brave Search API key (required when using Brave backend)',
         placeholder: 'Brave API Key',
         default: '',
         scope: 'server',
@@ -171,6 +172,7 @@ class ConfigManager {
   }
 
   private initialize() {
+    fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
     this.initializeConfig();
     this.initializeFromEnv();
   }
@@ -218,8 +220,22 @@ class ConfigManager {
   }
 
   private migrateConfig(config: Config): Config {
-    /* TODO: Add migrations */
-    return config;
+    return {
+      version: config.version ?? this.configVersion,
+      setupComplete: Boolean(config.setupComplete),
+      preferences: config.preferences ?? {},
+      personalization: config.personalization ?? {},
+      modelProviders: Array.isArray(config.modelProviders)
+        ? config.modelProviders.map((provider) => ({
+            ...provider,
+            chatModels: this.filterUsableModels(provider.chatModels || []),
+            embeddingModels: this.filterUsableModels(
+              provider.embeddingModels || [],
+            ),
+          }))
+        : [],
+      search: config.search ?? {},
+    };
   }
 
   private initializeFromEnv() {
@@ -274,7 +290,12 @@ class ConfigManager {
       }
     });
 
-    this.currentConfig.modelProviders.push(...newProviders);
+    if (newProviders.length > 0) {
+      this.currentConfig.modelProviders = [
+        ...this.currentConfig.modelProviders,
+        ...newProviders,
+      ];
+    }
 
     /* search section */
     this.uiConfigSections.search.forEach((f) => {
@@ -329,6 +350,15 @@ class ConfigManager {
   }
 
   public addModelProvider(type: string, name: string, config: any) {
+    const hash = hashObj({ type, ...config });
+    const existingProvider = this.currentConfig.modelProviders.find(
+      (provider) => provider.hash === hash,
+    );
+
+    if (existingProvider) {
+      return existingProvider;
+    }
+
     const newModelProvider: ConfigModelProvider = {
       id: crypto.randomUUID(),
       name,
@@ -336,7 +366,7 @@ class ConfigManager {
       config,
       chatModels: [],
       embeddingModels: [],
-      hash: hashObj({ type, ...config }),
+      hash,
     };
 
     this.currentConfig.modelProviders.push(newModelProvider);
@@ -356,8 +386,11 @@ class ConfigManager {
 
     if (!provider) return;
 
-    provider.chatModels = chatModels;
-    provider.embeddingModels = embeddingModels;
+    provider.chatModels = this.mergeModels(provider.chatModels, chatModels);
+    provider.embeddingModels = this.mergeModels(
+      provider.embeddingModels,
+      embeddingModels,
+    );
     this.saveConfig();
   }
 
@@ -383,6 +416,7 @@ class ConfigManager {
 
     provider.name = name;
     provider.config = config;
+    provider.hash = hashObj({ type: provider.type, ...config });
 
     this.saveConfig();
 
@@ -455,6 +489,23 @@ class ConfigManager {
 
   public getCurrentConfig(): Config {
     return JSON.parse(JSON.stringify(this.currentConfig));
+  }
+
+  private mergeModels(existingModels: Model[], discoveredModels: Model[]) {
+    const byKey = new Map<string, Model>();
+
+    this.filterUsableModels(existingModels).forEach((model) =>
+      byKey.set(model.key, model),
+    );
+    this.filterUsableModels(discoveredModels).forEach((model) =>
+      byKey.set(model.key, model),
+    );
+
+    return Array.from(byKey.values());
+  }
+
+  private filterUsableModels(models: Model[]) {
+    return models.filter((model) => model.key && model.key !== 'error');
   }
 }
 

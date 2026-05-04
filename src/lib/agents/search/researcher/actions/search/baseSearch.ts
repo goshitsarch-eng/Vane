@@ -16,6 +16,7 @@ export const executeSearch = async (input: {
   session: InstanceType<typeof SessionManager>;
   llm: BaseLLM<any>;
   embedding: BaseEmbedding<any> | null;
+  requestId?: string;
 }) => {
   const researchBlock = input.researchBlock;
 
@@ -40,7 +41,17 @@ export const executeSearch = async (input: {
     const results: Chunk[] = [];
 
     const doSearch = async (q: string) => {
-      const res = await search(q);
+      const res = await search(q, {
+        requestId: input.requestId,
+        retries: 1,
+        timeoutMs: 10000,
+      });
+
+      if (res.error) {
+        throw new Error(
+          `Search failed for ${res.error.backend}: ${res.error.message}`,
+        );
+      }
 
       let resultChunks: Chunk[] = [];
 
@@ -54,9 +65,7 @@ export const executeSearch = async (input: {
           await Promise.all(
             res.results.map(async (r) => {
               const content = r.content || r.title;
-              const chunkEmbedding = (
-                await embedding.embedText([content])
-              )[0];
+              const chunkEmbedding = (await embedding.embedText([content]))[0];
 
               return {
                 content,
@@ -176,7 +185,17 @@ export const executeSearch = async (input: {
     const searchResults: Chunk[] = [];
 
     const doSearch = async (q: string) => {
-      const res = await search(q);
+      const res = await search(q, {
+        requestId: input.requestId,
+        retries: 1,
+        timeoutMs: 10000,
+      });
+
+      if (res.error) {
+        throw new Error(
+          `Search failed for ${res.error.backend}: ${res.error.message}`,
+        );
+      }
 
       let resultChunks: Chunk[] = [];
 

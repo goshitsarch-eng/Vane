@@ -2,6 +2,11 @@ import configManager from '@/lib/config';
 import ModelRegistry from '@/lib/models/registry';
 import { NextRequest, NextResponse } from 'next/server';
 import { ConfigModelProvider } from '@/lib/config/types';
+import {
+  createRequestContext,
+  logRequestEvent,
+  serializeError,
+} from '@/lib/observability/request';
 
 type SaveConfigBody = {
   key: string;
@@ -9,11 +14,13 @@ type SaveConfigBody = {
 };
 
 export const GET = async (req: NextRequest) => {
+  const context = createRequestContext(req, '/api/config');
   try {
+    logRequestEvent(context, 'config.get.start');
     const values = configManager.getCurrentConfig();
     const fields = configManager.getUIConfigSections();
 
-    const modelRegistry = new ModelRegistry();
+    const modelRegistry = new ModelRegistry(context);
     const modelProviders = await modelRegistry.getActiveProviders();
 
     values.modelProviders = values.modelProviders.map(
@@ -29,12 +36,21 @@ export const GET = async (req: NextRequest) => {
       },
     );
 
+    logRequestEvent(context, 'config.get.success', {
+      providerCount: values.modelProviders.length,
+    });
+
     return NextResponse.json({
       values,
       fields,
     });
   } catch (err) {
-    console.error('Error in getting config: ', err);
+    logRequestEvent(
+      context,
+      'config.get.error',
+      { error: serializeError(err) },
+      'error',
+    );
     return Response.json(
       { message: 'An error has occurred.' },
       { status: 500 },
@@ -43,6 +59,7 @@ export const GET = async (req: NextRequest) => {
 };
 
 export const POST = async (req: NextRequest) => {
+  const context = createRequestContext(req, '/api/config');
   try {
     const body: SaveConfigBody = await req.json();
 
@@ -58,6 +75,7 @@ export const POST = async (req: NextRequest) => {
     }
 
     configManager.updateConfig(body.key, body.value);
+    logRequestEvent(context, 'config.update.success', { key: body.key });
 
     return Response.json(
       {
@@ -68,7 +86,12 @@ export const POST = async (req: NextRequest) => {
       },
     );
   } catch (err) {
-    console.error('Error in getting config: ', err);
+    logRequestEvent(
+      context,
+      'config.update.error',
+      { error: serializeError(err) },
+      'error',
+    );
     return Response.json(
       { message: 'An error has occurred.' },
       { status: 500 },

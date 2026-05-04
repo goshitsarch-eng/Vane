@@ -2,7 +2,7 @@ import configManager from './index';
 import { ConfigModelProvider } from './types';
 
 export const getConfiguredModelProviders = (): ConfigModelProvider[] => {
-  return configManager.getConfig('modelProviders', []);
+  return configManager.getCurrentConfig().modelProviders ?? [];
 };
 
 export const getConfiguredModelProviderById = (

@@ -18,6 +18,8 @@ import { MinimalProvider } from '../models/types';
 import { getAutoMediaSearch } from '../config/clientRegistry';
 import { applyPatch } from 'rfc6902';
 import { Widget } from '@/components/ChatWindow';
+import { consumeNewlineJson, flushNewlineJson } from '@/lib/utils/newlineJson';
+import { sliceRewriteHistory } from './chatHistory';
 
 export type Section = {
   message: Message;
@@ -454,20 +456,14 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
             const { value, done } = await reader.read();
             if (done) break;
 
-            partialChunk += decoder.decode(value, { stream: true });
-
-            try {
-              const messages = partialChunk.split('\n');
-              for (const msg of messages) {
-                if (!msg.trim()) continue;
-                const json = JSON.parse(msg);
-                messageHandler(json);
-              }
-              partialChunk = '';
-            } catch (error) {
-              console.warn('Incomplete JSON, waiting for next chunk...');
-            }
+            partialChunk = consumeNewlineJson(
+              partialChunk,
+              decoder.decode(value, { stream: true }),
+              messageHandler,
+            );
           }
+
+          flushNewlineJson(partialChunk, messageHandler);
         } finally {
           if (loadingRef.current) {
             setLoading(false);
@@ -553,7 +549,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     setMessages((prev) => prev.slice(0, index));
 
-    chatHistory.current = chatHistory.current.slice(0, index * 2);
+    chatHistory.current = sliceRewriteHistory(chatHistory.current, index);
 
     const messageToRewrite = messages[index];
     sendMessage(messageToRewrite.query, messageToRewrite.messageId, true);
@@ -685,19 +681,13 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
         setLoading(false);
 
-        const lastMsg = messagesRef.current[messagesRef.current.length - 1];
-
         const autoMediaSearch = getAutoMediaSearch();
 
         if (autoMediaSearch) {
           setTimeout(() => {
-            document
-              .getElementById(`search-images-${lastMsg.messageId}`)
-              ?.click();
+            document.getElementById(`search-images-${messageId}`)?.click();
 
-            document
-              .getElementById(`search-videos-${lastMsg.messageId}`)
-              ?.click();
+            document.getElementById(`search-videos-${messageId}`)?.click();
           }, 200);
         }
 
@@ -739,7 +729,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     messageId,
     rewrite = false,
   ) => {
-    if (loading || !message) return;
+    if (loadingRef.current || !message) return;
     setLoading(true);
     setResearchEnded(false);
     setMessageAppeared(false);
@@ -782,10 +772,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         sources: sources,
         optimizationMode: optimizationMode,
         history: rewrite
-          ? chatHistory.current.slice(
-              0,
-              messageIndex === -1 ? undefined : messageIndex,
-            )
+          ? sliceRewriteHistory(chatHistory.current, messageIndex)
           : chatHistory.current,
         chatModel: {
           key: chatModelProvider.key,
@@ -833,20 +820,14 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         const { value, done } = await reader.read();
         if (done) break;
 
-        partialChunk += decoder.decode(value, { stream: true });
-
-        try {
-          const messages = partialChunk.split('\n');
-          for (const msg of messages) {
-            if (!msg.trim()) continue;
-            const json = JSON.parse(msg);
-            messageHandler(json);
-          }
-          partialChunk = '';
-        } catch (error) {
-          console.warn('Incomplete JSON, waiting for next chunk...');
-        }
+        partialChunk = consumeNewlineJson(
+          partialChunk,
+          decoder.decode(value, { stream: true }),
+          messageHandler,
+        );
       }
+
+      flushNewlineJson(partialChunk, messageHandler);
     } finally {
       if (loadingRef.current) {
         setLoading(false);

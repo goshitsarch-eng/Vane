@@ -58,8 +58,6 @@ const Page = () => {
         throw new Error(data.message);
       }
 
-      data.blogs = data.blogs.filter((blog: Discover) => blog.thumbnail);
-
       setDiscover(data.blogs);
     } catch (err: any) {
       console.error('Error fetching data:', err.message);
@@ -127,6 +125,11 @@ const Page = () => {
           </div>
         ) : (
           <div className="flex flex-col gap-4 pb-28 pt-5 lg:pb-8 w-full">
+            {discover?.length === 0 && (
+              <div className="flex min-h-[40vh] items-center justify-center text-sm text-black/60 dark:text-white/60">
+                No articles found.
+              </div>
+            )}
             <div className="block lg:hidden">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {discover?.map((item, i) => (

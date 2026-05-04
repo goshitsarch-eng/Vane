@@ -6,6 +6,7 @@ import {
   GenerateTextInput,
   GenerateTextOutput,
   StreamTextOutput,
+  Tool,
   ToolCall,
 } from '../../types';
 import { Message } from '@/lib/types';
@@ -39,6 +40,16 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
       /\/+$/,
       '',
     );
+  }
+
+  private convertTools(tools: Tool[] | undefined) {
+    if (!tools || tools.length === 0) return undefined;
+
+    return tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: z.toJSONSchema(tool.schema),
+    }));
   }
 
   convertToAnthropicMessages(messages: Message[]): {
@@ -94,7 +105,9 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
   }
 
   async generateText(input: GenerateTextInput): Promise<GenerateTextOutput> {
-    const { system, messages } = this.convertToAnthropicMessages(input.messages);
+    const { system, messages } = this.convertToAnthropicMessages(
+      input.messages,
+    );
 
     const body: any = {
       model: this.config.model,
@@ -107,6 +120,8 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
     };
 
     if (system) body.system = system;
+    const tools = this.convertTools(input.tools);
+    if (tools) body.tools = tools;
     if (input.options?.stopSequences || this.config.options?.stopSequences) {
       body.stop_sequences =
         input.options?.stopSequences ?? this.config.options?.stopSequences;
@@ -157,7 +172,9 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
   async *streamText(
     input: GenerateTextInput,
   ): AsyncGenerator<StreamTextOutput> {
-    const { system, messages } = this.convertToAnthropicMessages(input.messages);
+    const { system, messages } = this.convertToAnthropicMessages(
+      input.messages,
+    );
 
     const body: any = {
       model: this.config.model,
@@ -171,6 +188,8 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
     };
 
     if (system) body.system = system;
+    const tools = this.convertTools(input.tools);
+    if (tools) body.tools = tools;
     if (input.options?.stopSequences || this.config.options?.stopSequences) {
       body.stop_sequences =
         input.options?.stopSequences ?? this.config.options?.stopSequences;
@@ -198,9 +217,37 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let contentChunk = '';
-    let toolCalls: ToolCall[] = [];
-    let currentToolCall: ToolCall | null = null;
+    const toolCallsByIndex = new Map<
+      number,
+      { id: string; name: string; argumentsBuffer: string }
+    >();
+    let doneEmitted = false;
+
+    const parseToolArguments = (argumentsBuffer: string) => {
+      if (!argumentsBuffer.trim()) return {};
+
+      try {
+        return parse(argumentsBuffer);
+      } catch {
+        try {
+          return JSON.parse(
+            repairJson(argumentsBuffer, { extractJson: true }) as string,
+          );
+        } catch {
+          return {};
+        }
+      }
+    };
+
+    const buildToolCall = (toolCall: {
+      id: string;
+      name: string;
+      argumentsBuffer: string;
+    }): ToolCall => ({
+      id: toolCall.id,
+      name: toolCall.name,
+      arguments: parseToolArguments(toolCall.argumentsBuffer),
+    });
 
     while (true) {
       const { done, value } = await reader.read();
@@ -220,39 +267,61 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
 
           if (event.type === 'content_block_delta') {
             if (event.delta?.type === 'text_delta') {
-              contentChunk += event.delta.text || '';
+              yield {
+                contentChunk: event.delta.text || '',
+                toolCallChunk: [],
+                done: false,
+                additionalInfo: {},
+              };
             } else if (event.delta?.type === 'input_json_delta') {
-              // Tool call arguments streaming
-              if (currentToolCall) {
-                // We don't stream tool call args incrementally in this implementation
-                // Just collect them
+              const toolCall = toolCallsByIndex.get(event.index);
+
+              if (toolCall) {
+                toolCall.argumentsBuffer += event.delta.partial_json || '';
+                yield {
+                  contentChunk: '',
+                  toolCallChunk: [buildToolCall(toolCall)],
+                  done: false,
+                  additionalInfo: {},
+                };
               }
             }
           } else if (event.type === 'content_block_start') {
             if (event.content_block?.type === 'tool_use') {
-              currentToolCall = {
+              const initialInput =
+                event.content_block.input &&
+                Object.keys(event.content_block.input).length > 0
+                  ? JSON.stringify(event.content_block.input)
+                  : '';
+
+              toolCallsByIndex.set(event.index, {
                 id: event.content_block.id,
                 name: event.content_block.name,
-                arguments: event.content_block.input || {},
-              };
+                argumentsBuffer: initialInput,
+              });
             }
           } else if (event.type === 'content_block_stop') {
-            if (currentToolCall) {
-              toolCalls.push({ ...currentToolCall });
-              currentToolCall = null;
+            const toolCall = toolCallsByIndex.get(event.index);
+
+            if (toolCall) {
+              yield {
+                contentChunk: '',
+                toolCallChunk: [buildToolCall(toolCall)],
+                done: false,
+                additionalInfo: {},
+              };
             }
           } else if (event.type === 'message_delta') {
             if (event.delta?.stop_reason) {
               yield {
-                contentChunk,
-                toolCallChunk: toolCalls,
+                contentChunk: '',
+                toolCallChunk: [],
                 done: true,
                 additionalInfo: {
                   finishReason: event.delta.stop_reason,
                 },
               };
-              contentChunk = '';
-              toolCalls = [];
+              doneEmitted = true;
             }
           } else if (event.type === 'message_stop') {
             // Final stop
@@ -263,11 +332,10 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
       }
     }
 
-    // Yield any remaining content
-    if (contentChunk || toolCalls.length > 0) {
+    if (!doneEmitted) {
       yield {
-        contentChunk,
-        toolCallChunk: toolCalls,
+        contentChunk: '',
+        toolCallChunk: [],
         done: true,
         additionalInfo: {},
       };
@@ -280,7 +348,9 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
   }
 
   async generateObject<T>(input: GenerateObjectInput): Promise<T> {
-    const { system, messages } = this.convertToAnthropicMessages(input.messages);
+    const { system, messages } = this.convertToAnthropicMessages(
+      input.messages,
+    );
 
     const lastMsg = messages[messages.length - 1];
     if (
@@ -338,7 +408,9 @@ class AnthropicLLM extends BaseLLM<AnthropicConfig> {
   }
 
   async *streamObject<T>(input: GenerateObjectInput): AsyncGenerator<T> {
-    const { system, messages } = this.convertToAnthropicMessages(input.messages);
+    const { system, messages } = this.convertToAnthropicMessages(
+      input.messages,
+    );
 
     const lastMsg = messages[messages.length - 1];
     if (

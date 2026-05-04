@@ -6,9 +6,13 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData();
 
-    const files = formData.getAll('files') as File[];
+    const files = formData
+      .getAll('files')
+      .filter((file): file is File => file instanceof File && file.size > 0);
     const embeddingModel = formData.get('embedding_model_key') as string;
-    const embeddingModelProvider = formData.get('embedding_model_provider_id') as string;
+    const embeddingModelProvider = formData.get(
+      'embedding_model_provider_id',
+    ) as string;
 
     if (!embeddingModel || !embeddingModelProvider) {
       return NextResponse.json(
@@ -17,13 +21,23 @@ export async function POST(req: Request) {
       );
     }
 
+    if (files.length === 0) {
+      return NextResponse.json(
+        { message: 'At least one file is required' },
+        { status: 400 },
+      );
+    }
+
     const registry = new ModelRegistry();
 
-    const model = await registry.loadEmbeddingModel(embeddingModelProvider, embeddingModel);
-    
+    const model = await registry.loadEmbeddingModel(
+      embeddingModelProvider,
+      embeddingModel,
+    );
+
     const uploadManager = new UploadManager({
       embeddingModel: model,
-    })
+    });
 
     const processedFiles = await uploadManager.processFiles(files);
 

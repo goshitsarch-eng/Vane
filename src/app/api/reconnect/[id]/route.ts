@@ -16,64 +16,59 @@ export const POST = async (
     const responseStream = new TransformStream();
     const writer = responseStream.writable.getWriter();
     const encoder = new TextEncoder();
+    let streamClosed = false;
+
+    const writeStreamEvent = (event: Record<string, unknown>) => {
+      if (streamClosed) return;
+
+      writer.write(encoder.encode(JSON.stringify(event) + '\n')).catch(() => {
+        streamClosed = true;
+      });
+    };
+
+    const closeStream = () => {
+      if (streamClosed) return;
+      streamClosed = true;
+      writer.close().catch(() => {});
+    };
 
     const disconnect = session.subscribe((event, data) => {
       if (event === 'data') {
         if (data.type === 'block') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'block',
-                block: data.block,
-              }) + '\n',
-            ),
-          );
+          writeStreamEvent({
+            type: 'block',
+            block: data.block,
+          });
         } else if (data.type === 'updateBlock') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'updateBlock',
-                blockId: data.blockId,
-                patch: data.patch,
-              }) + '\n',
-            ),
-          );
+          writeStreamEvent({
+            type: 'updateBlock',
+            blockId: data.blockId,
+            patch: data.patch,
+          });
         } else if (data.type === 'researchComplete') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'researchComplete',
-              }) + '\n',
-            ),
-          );
+          writeStreamEvent({
+            type: 'researchComplete',
+          });
         }
       } else if (event === 'end') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'messageEnd',
-            }) + '\n',
-          ),
-        );
-        writer.close();
+        writeStreamEvent({
+          type: 'messageEnd',
+        });
+        closeStream();
         disconnect();
       } else if (event === 'error') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'error',
-              data: data.data,
-            }) + '\n',
-          ),
-        );
-        writer.close();
+        writeStreamEvent({
+          type: 'error',
+          data: data.data,
+        });
+        closeStream();
         disconnect();
       }
     });
 
     req.signal.addEventListener('abort', () => {
       disconnect();
-      writer.close();
+      closeStream();
     });
 
     return new Response(responseStream.readable, {

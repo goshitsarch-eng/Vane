@@ -61,7 +61,7 @@ class Researcher {
       },
     ];
 
-    let toolError: Error | undefined;
+    let directSearchFallbackReason: string | undefined;
 
     for (let i = 0; i < maxIteration; i++) {
       const researcherPrompt = getResearcherPrompt(
@@ -158,7 +158,8 @@ class Researcher {
         if (!isToolUnsupportedError(err)) {
           throw err;
         }
-        toolError = err instanceof Error ? err : new Error(String(err));
+        const toolError = err instanceof Error ? err : new Error(String(err));
+        directSearchFallbackReason = toolError.message;
         console.warn(
           'Model does not support tool use, falling back to direct search.',
           toolError.message,
@@ -167,6 +168,7 @@ class Researcher {
       }
 
       if (finalToolCalls.length === 0) {
+        directSearchFallbackReason = 'No research tool calls were produced';
         break;
       }
 
@@ -202,12 +204,25 @@ class Researcher {
       });
     }
 
-    // Fallback: if tool use was unsupported, run a single web_search directly
-    if (toolError && input.config.sources.includes('web')) {
+    const hasSearchResults = actionOutput.some(
+      (output) => output.type === 'search_results' && output.results.length > 0,
+    );
+
+    if (
+      directSearchFallbackReason &&
+      !hasSearchResults &&
+      input.config.sources.includes('web') &&
+      input.classification.classification.skipSearch === false
+    ) {
       try {
         const fallbackResult = await ActionRegistry.execute(
           'web_search',
-          { type: 'web_search', queries: [input.followUp] },
+          {
+            type: 'web_search',
+            queries: [
+              input.classification.standaloneFollowUp || input.followUp,
+            ],
+          },
           {
             llm: input.config.llm,
             embedding: input.config.embedding,
@@ -221,7 +236,10 @@ class Researcher {
 
         actionOutput.push(fallbackResult);
       } catch (err) {
-        console.error('Fallback direct search failed:', err);
+        console.error(
+          `Fallback direct search failed after ${directSearchFallbackReason}:`,
+          err,
+        );
       }
     }
 

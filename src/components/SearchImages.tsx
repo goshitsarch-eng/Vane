@@ -3,7 +3,6 @@ import { ImagesIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
-import { Message } from './ChatWindow';
 
 type Image = {
   url: string;
@@ -24,6 +23,7 @@ const SearchImages = ({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [slides, setSlides] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <>
@@ -32,45 +32,62 @@ const SearchImages = ({
           id={`search-images-${messageId}`}
           onClick={async () => {
             setLoading(true);
+            setError(null);
 
-            const chatModelProvider = localStorage.getItem(
-              'chatModelProviderId',
-            );
-            const chatModel = localStorage.getItem('chatModelKey');
+            try {
+              const chatModelProvider = localStorage.getItem(
+                'chatModelProviderId',
+              );
+              const chatModel = localStorage.getItem('chatModelKey');
 
-            if (!chatModel || !chatModelProvider) {
-              setLoading(false);
-              return;
-            }
+              if (!chatModel || !chatModelProvider) {
+                setImages([]);
+                setError('Select a chat model before searching images.');
+                return;
+              }
 
-            const res = await fetch(`/api/images`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                query: query,
-                chatHistory: chatHistory,
-                chatModel: {
-                  providerId: chatModelProvider,
-                  key: chatModel,
+              const res = await fetch(`/api/images`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
                 },
-              }),
-            });
+                body: JSON.stringify({
+                  query: query,
+                  chatHistory: chatHistory,
+                  chatModel: {
+                    providerId: chatModelProvider,
+                    key: chatModel,
+                  },
+                }),
+              });
 
-            const data = await res.json();
+              const data = await res.json().catch(() => ({}));
 
-            const images = data.images ?? [];
-            setImages(images);
-            setSlides(
-              images.map((image: Image) => {
-                return {
-                  src: image.img_src,
-                };
-              }),
-            );
-            setLoading(false);
+              if (!res.ok) {
+                throw new Error(
+                  data.message ||
+                    `Image search failed with status ${res.status}`,
+                );
+              }
+
+              const images = data.images ?? [];
+              setImages(images);
+              setError(data.warning ?? null);
+              setSlides(
+                images.map((image: Image) => {
+                  return {
+                    src: image.img_src,
+                  };
+                }),
+              );
+            } catch (err: any) {
+              setImages([]);
+              setError(err.message || 'Image search failed.');
+            } finally {
+              setLoading(false);
+            }
           }}
+          onMouseDown={(event) => event.currentTarget.blur()}
           className="border border-dashed border-light-200 dark:border-dark-200 hover:bg-light-200 dark:hover:bg-dark-200 active:scale-95 duration-200 transition px-4 py-2 flex flex-row items-center justify-between rounded-lg dark:text-white text-sm w-full"
         >
           <div className="flex flex-row items-center space-x-2">
@@ -149,6 +166,11 @@ const SearchImages = ({
           </div>
           <Lightbox open={open} close={() => setOpen(false)} slides={slides} />
         </>
+      )}
+      {images !== null && images.length === 0 && (
+        <div className="border border-dashed border-light-200 dark:border-dark-200 rounded-lg px-4 py-3 text-sm text-black/60 dark:text-white/60">
+          {error ?? 'No images found.'}
+        </div>
       )}
     </>
   );

@@ -1,9 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
-import { PlayCircle, PlayIcon, PlusIcon, VideoIcon } from 'lucide-react';
+import { PlayCircle, PlusIcon, VideoIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 import Lightbox, { GenericSlide, VideoSlide } from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
-import { Message } from './ChatWindow';
 
 type Video = {
   url: string;
@@ -39,6 +38,7 @@ const Searchvideos = ({
   const [slides, setSlides] = useState<VideoSlide[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const videoRefs = useRef<(HTMLIFrameElement | null)[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <>
@@ -47,46 +47,62 @@ const Searchvideos = ({
           id={`search-videos-${messageId}`}
           onClick={async () => {
             setLoading(true);
+            setError(null);
 
-            const chatModelProvider = localStorage.getItem(
-              'chatModelProviderId',
-            );
-            const chatModel = localStorage.getItem('chatModelKey');
+            try {
+              const chatModelProvider = localStorage.getItem(
+                'chatModelProviderId',
+              );
+              const chatModel = localStorage.getItem('chatModelKey');
 
-            if (!chatModel || !chatModelProvider) {
-              setLoading(false);
-              return;
-            }
+              if (!chatModel || !chatModelProvider) {
+                setVideos([]);
+                setError('Select a chat model before searching videos.');
+                return;
+              }
 
-            const res = await fetch(`/api/videos`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                query: query,
-                chatHistory: chatHistory,
-                chatModel: {
-                  providerId: chatModelProvider,
-                  key: chatModel,
+              const res = await fetch(`/api/videos`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
                 },
-              }),
-            });
+                body: JSON.stringify({
+                  query: query,
+                  chatHistory: chatHistory,
+                  chatModel: {
+                    providerId: chatModelProvider,
+                    key: chatModel,
+                  },
+                }),
+              });
 
-            const data = await res.json();
+              const data = await res.json().catch(() => ({}));
 
-            const videos = data.videos ?? [];
-            setVideos(videos);
-            setSlides(
-              videos.map((video: Video) => {
-                return {
-                  type: 'video-slide',
-                  iframe_src: video.iframe_src,
-                  src: video.img_src,
-                };
-              }),
-            );
-            setLoading(false);
+              if (!res.ok) {
+                throw new Error(
+                  data.message ||
+                    `Video search failed with status ${res.status}`,
+                );
+              }
+
+              const videos = data.videos ?? [];
+              setVideos(videos);
+              setError(data.warning ?? null);
+              setSlides(
+                videos.map((video: Video) => {
+                  return {
+                    type: 'video-slide',
+                    iframe_src: video.iframe_src,
+                    src: video.img_src,
+                  };
+                }),
+              );
+            } catch (err: any) {
+              setVideos([]);
+              setError(err.message || 'Video search failed.');
+            } finally {
+              setLoading(false);
+            }
           }}
           className="border border-dashed border-light-200 dark:border-dark-200 hover:bg-light-200 dark:hover:bg-dark-200 active:scale-95 duration-200 transition px-4 py-2 flex flex-row items-center justify-between rounded-lg dark:text-white text-sm w-full"
         >
@@ -220,6 +236,11 @@ const Searchvideos = ({
             }}
           />
         </>
+      )}
+      {videos !== null && videos.length === 0 && (
+        <div className="border border-dashed border-light-200 dark:border-dark-200 rounded-lg px-4 py-3 text-sm text-black/60 dark:text-white/60">
+          {error ?? 'No videos found.'}
+        </div>
       )}
     </>
   );
